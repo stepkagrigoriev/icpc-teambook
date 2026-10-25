@@ -1,0 +1,422 @@
+\section{Топологическая сортировка: алгоритм Кана}
+Для списков смежности ориентированного графа возвращает топологический порядок всех вершин либо \texttt{nullopt} при цикле.
+Вершины нумеруются с нуля; пустой граф, петли и кратные рёбра допустимы, входящие степени меньше \texttt{INT\_MAX}.
+Время и память $O(n+m)$.
+\begin{lstlisting}[name=extra_graph_topological]
+optional<vector<int>> topological_kahn(const vector<vector<int>>& graph) {
+    int n = graph.size();
+    vector<int> indegree(n), order;
+    for (const auto& adjacent : graph)
+        for (int next : adjacent) ++indegree[next];
+    for (int vertex = 0; vertex < n; ++vertex)
+        if (indegree[vertex] == 0) order.push_back(vertex);
+    for (int index = 0; index < (int)order.size(); ++index)
+        for (int next : graph[order[index]])
+            if (--indegree[next] == 0) order.push_back(next);
+    if ((int)order.size() != n) return nullopt;
+    return order;
+}
+\end{lstlisting}
+% Порядок вершин ориентированного графа, в котором каждая дуга направлена
+% вперёд. Результат --- \texttt{optional<vector<int>>}: \texttt{nullopt}
+% при цикле, иначе перестановка всех вершин. Пустой граф допустим.
+% Время и память $O(n+m)$ с учётом входа.
+% Материал: \url{https://ru.algorithmica.org/cs/graph-traversals/topological-sorting/}.
+% На странице описан DFS; ниже авторская реализация Кана.
+% Во всех листингах раздела вершины нумеруются с нуля, индексы имеют тип
+% \texttt{int}, веса и расстояния --- \texttt{ll} (\texttt{long long}).
+% Нужны стандартные заголовки, пространство имён \texttt{std} и этот псевдоним
+% из общего шаблона. Размеры контейнеров и счётчики должны помещаться в
+% \texttt{int}; все концы рёбер и источники корректны. Петли, кратные рёбра
+% и несвязность допустимы, если явно не сказано иное.
+% Для Кана также входящие степени меньше \texttt{INT\_MAX}.
+%
+% Минимальная куча вместо очереди даёт лексикографически минимальный порядок
+% за $O(m+n\log(n+1))$. Единственность порядка проверяется по числу доступных
+% вершин на каждом шаге; для восстановления цикла нужен отдельный обход.
+
+\section{Задача 2-SAT: восстановление значений переменных}
+Для $n$ переменных и пар литералов \texttt{clauses} возвращает удовлетворяющие значения $0/1$ либо \texttt{nullopt} при противоречии.
+Литерал $2i$ означает $x_i$, $2i+1$ --- $\neg x_i$; требуется $0\le2n<\texttt{INT\_MAX}$, литералы из $[0,2n)$.
+Пустая формула допустима; время и память $O(n+m)$, где $m$ --- число дизъюнктов, рекурсии нет.
+\begin{lstlisting}[name=extra_graph_two_sat]
+optional<vector<int>> two_sat(int n, const vector<pair<int, int>>& clauses) {
+    int vertices = 2 * n;
+    vector<vector<int>> graph(vertices), reversed(vertices);
+    for (auto [first, second] : clauses) {
+        graph[first ^ 1].push_back(second);
+        reversed[second].push_back(first ^ 1);
+        graph[second ^ 1].push_back(first);
+        reversed[first].push_back(second ^ 1);
+    }
+    vector<char> visited(vertices);
+    vector<int> order, component(vertices, -1);
+    for (int root = 0; root < vertices; ++root) {
+        if (visited[root]) continue;
+        vector<pair<int, int>> stack = {{root, 0}};
+        visited[root] = true;
+        while (!stack.empty()) {
+            int vertex = stack.back().first;
+            int& index = stack.back().second;
+            if (index == (int)graph[vertex].size()) {
+                order.push_back(vertex);
+                stack.pop_back();
+            } else {
+                int next = graph[vertex][index++];
+                if (visited[next]) continue;
+                visited[next] = true;
+                stack.push_back({next, 0});
+            }
+        }
+    }
+    reverse(order.begin(), order.end());
+    int count = 0;
+    for (int root : order) {
+        if (component[root] != -1) continue;
+        vector<int> stack = {root};
+        component[root] = count;
+        while (!stack.empty()) {
+            int vertex = stack.back();
+            stack.pop_back();
+            for (int next : reversed[vertex]) {
+                if (component[next] != -1) continue;
+                component[next] = count;
+                stack.push_back(next);
+            }
+        }
+        ++count;
+    }
+    vector<int> assignment(n);
+    for (int variable = 0; variable < n; ++variable) {
+        if (component[2 * variable] == component[2 * variable + 1])
+            return nullopt;
+        assignment[variable] =
+            component[2 * variable] > component[2 * variable + 1];
+    }
+    return assignment;
+}
+\end{lstlisting}
+% Выполнимость конъюнкции дизъюнктов из двух литералов с восстановлением
+% значений переменных. Литерал $2i$ означает $x_i$, $2i+1$ --- $\neg x_i$,
+% отрицание меняет младший бит. \texttt{clauses} содержит пары литералов.
+% Результат --- \texttt{nullopt} при противоречии либо массив значений $0/1$.
+% Пустая формула и ноль переменных допустимы. Время и память $O(n+m)$,
+% где $m$ --- число дизъюнктов; обходы без рекурсии.
+% Материал: \url{https://ru.algorithmica.org/cs/graph-traversals/2-sat/}.
+% Авторский код Косарайю; номера компонент растут вдоль дуг конденсации,
+% поэтому положительный литерал выбирается при большем номере компоненты.
+% Требуется $0\le 2n<\texttt{INT\_MAX}$, литералы лежат в $[0,2n)$.
+%
+% Единичное условие представляется двумя одинаковыми литералами.
+% Можно восстанавливать цепочки импликаций, объясняющие противоречие.
+% Произвольные дизъюнкты из трёх литералов этим алгоритмом не решаются.
+
+\section{Эйлеров путь: ориентированный и неориентированный граф}
+Для пар концов \texttt{edges} и флага \texttt{directed} возвращает вершины эйлерова пути и ID рёбер между ними либо \texttt{nullopt}, если пути нет; ID --- позиция ребра во входе.
+Вершины нумеруются с нуля; петли, кратные рёбра и изолированные вершины допустимы, требуется $2m<\texttt{INT\_MAX}$.
+При $m=0$ ответ содержит вершину 0 для $n>0$, иначе оба массива пусты.
+Время и память $O(n+m)$, рекурсии нет.
+\begin{lstlisting}[name=extra_graph_euler]
+optional<pair<vector<int>, vector<int>>> euler_trail(
+        int n, const vector<pair<int, int>>& edges, bool directed) {
+    int m = edges.size();
+    vector<vector<pair<int, int>>> graph(n);
+    vector<int> incoming(n), outgoing(n);
+    for (int id = 0; id < m; ++id) {
+        auto [from, to] = edges[id];
+        graph[from].push_back({to, id});
+        ++outgoing[from];
+        ++incoming[to];
+        if (!directed) {
+            graph[to].push_back({from, id});
+            ++outgoing[to];
+            ++incoming[from];
+        }
+    }
+    if (m == 0) return pair{n == 0 ? vector<int>{} : vector<int>{0},
+                             vector<int>{}};
+    int start = edges[0].first, positive = 0, negative = 0, odd = 0;
+    for (int vertex = 0; vertex < n; ++vertex) {
+        if (directed) {
+            int difference = outgoing[vertex] - incoming[vertex];
+            if (difference == 1) { ++positive; start = vertex; }
+            else if (difference == -1) ++negative;
+            else if (difference != 0) return nullopt;
+        } else if (outgoing[vertex] % 2 != 0) {
+            ++odd;
+            start = vertex;
+        }
+    }
+    if (directed && !((positive == 0 && negative == 0) ||
+                      (positive == 1 && negative == 1))) return nullopt;
+    if (!directed && odd != 0 && odd != 2) return nullopt;
+    vector<int> index(n), vertices, edgeIds;
+    vector<char> used(m);
+    vector<pair<int, int>> stack = {{start, -1}};
+    while (!stack.empty()) {
+        int vertex = stack.back().first;
+        int& position = index[vertex];
+        while (position < (int)graph[vertex].size() &&
+               used[graph[vertex][position].second]) ++position;
+        if (position == (int)graph[vertex].size()) {
+            vertices.push_back(vertex);
+            if (stack.back().second != -1)
+                edgeIds.push_back(stack.back().second);
+            stack.pop_back();
+        } else {
+            auto [next, id] = graph[vertex][position++];
+            used[id] = true;
+            stack.push_back({next, id});
+        }
+    }
+    if ((int)edgeIds.size() != m) return nullopt;
+    reverse(vertices.begin(), vertices.end());
+    reverse(edgeIds.begin(), edgeIds.end());
+    return pair{vertices, edgeIds};
+}
+\end{lstlisting}
+% Путь, использующий каждое ребро ровно один раз. \texttt{edges} --- пары
+% концов, номер ребра равен позиции во входе; \texttt{directed} задаёт
+% ориентированность. Результат --- \texttt{nullopt}, если пути нет, иначе
+% пара массивов: вершины пути и номера рёбер между соседними вершинами.
+% При $m=0$ результат содержит вершину $0$ для $n>0$, иначе оба массива пусты.
+% Изолированные вершины не мешают. Время и память $O(n+m)$, без рекурсии.
+% Материал: \url{https://ru.algorithmica.org/cs/graph-traversals/euler-cycle/}.
+% Авторская итеративная реализация Хиерхольцера с проверкой степеней и
+% числа использованных рёбер. Требуется $2m<\texttt{INT\_MAX}$,
+% чтобы степени неориентированного графа с петлями помещались в \texttt{int}.
+%
+% Начальную вершину можно сделать параметром, проверяя её степень и
+% принадлежность компоненте с рёбрами. Упорядоченные списки смежности
+% полезны в задачах с дополнительными требованиями к порядку обхода.
+
+\section{Кратчайшие пути с весами ноль и один}
+Для \texttt{graph} с парами (конец дуги, вес) и источника возвращает кратчайшие расстояния типа \texttt{ll}; $2^{62}$ означает недостижимость.
+Требуются $n\ge1$, корректные номера вершин с нуля и веса только 0 или 1.
+Время и память $O(n+m)$.
+\begin{lstlisting}[name=extra_graph_zero_one_bfs]
+vector<ll> zero_one_bfs(
+        const vector<vector<pair<int, ll>>>& graph, int source) {
+    const ll infinity = 1LL << 62;
+    vector<ll> distance(graph.size(), infinity);
+    deque<pair<ll, int>> queue;
+    distance[source] = 0;
+    queue.push_back({0, source});
+    while (!queue.empty()) {
+        auto [current, vertex] = queue.front();
+        queue.pop_front();
+        if (current != distance[vertex]) continue;
+        for (auto [next, weight] : graph[vertex]) {
+            ll candidate = current + weight;
+            if (candidate >= distance[next]) continue;
+            distance[next] = candidate;
+            if (weight == 0) queue.push_front({candidate, next});
+            else queue.push_back({candidate, next});
+        }
+    }
+    return distance;
+}
+\end{lstlisting}
+% Кратчайшие расстояния от источника при весах только $0$ и $1$.
+% \texttt{graph} хранит пары (конец дуги, вес). Результат --- расстояния
+% типа \texttt{ll}; $2^{62}$ означает недостижимость. Требуется $n\ge1$.
+% Время и память $O(n+m)$ с учётом входа и дека.
+% Материал: \url{https://ru.algorithmica.org/cs/shortest-paths/bfs/}.
+% Авторская реализация: используются релаксации, а не только первое
+% посещение; устаревшие записи дека пропускаются.
+% Конечное расстояние не больше $n-1$, сложение с бесконечностью отсутствует.
+%
+% Родительские рёбра позволяют восстановить кратчайший путь.
+% Для небольших целых неотрицательных весов применим алгоритм Дайла,
+% для произвольных неотрицательных --- Дейкстра.
+
+\section{Беллман---Форд и достижимый отрицательный цикл}
+Для $n\ge1$, дуг (начало, конец, вес) и источника возвращает \texttt{distance}, \texttt{parentEdge}, \texttt{cycleEdges} --- ID рёбер достижимого отрицательного цикла в прямом порядке.
+Если цикл не найден, расстояния кратчайшие, $2^{62}$ означает недостижимость; иначе расстояния --- промежуточные метки, вершины с расстоянием $-\infty$ не помечаются.
+Все вычисляемые суммы строго между $-2^{62}$ и $2^{62}$; достаточно математического условия $n\max(1,m)W<2^{62}$ при $|w|\le W$.
+Время $O(nm+n)$, дополнительная память $O(n)$.
+\begin{lstlisting}[name=extra_graph_bellman_ford]
+auto bellman_ford(int n, const vector<tuple<int, int, ll>>& edges,
+        int source) {
+    struct Result {
+        vector<ll> distance;
+        vector<int> parentEdge, cycleEdges;
+    };
+    const ll infinity = 1LL << 62;
+    Result result{vector<ll>(n, infinity), vector<int>(n, -1), {}};
+    result.distance[source] = 0;
+    int changed = -1;
+    for (int pass = 0; pass < n; ++pass) {
+        changed = -1;
+        for (int id = 0; id < (int)edges.size(); ++id) {
+            auto [from, to, weight] = edges[id];
+            if (result.distance[from] == infinity) continue;
+            ll candidate = result.distance[from] + weight;
+            if (candidate >= result.distance[to]) continue;
+            result.distance[to] = candidate;
+            result.parentEdge[to] = id;
+            changed = to;
+        }
+        if (changed == -1) break;
+    }
+    if (changed == -1) return result;
+    int vertex = changed;
+    for (int step = 0; step < n; ++step)
+        vertex = get<0>(edges[result.parentEdge[vertex]]);
+    int start = vertex;
+    do {
+        int id = result.parentEdge[vertex];
+        result.cycleEdges.push_back(id);
+        vertex = get<0>(edges[id]);
+    } while (vertex != start);
+    reverse(result.cycleEdges.begin(), result.cycleEdges.end());
+    return result;
+}
+\end{lstlisting}
+% Кратчайшие пути с отрицательными весами и восстановление отрицательного
+% цикла, достижимого из источника. $n\ge1$; \texttt{edges} --- тройки
+% (начало, конец, вес). Результат содержит \texttt{distance},
+% \texttt{parentEdge} и \texttt{cycleEdges}. Последнее поле --- номера
+% рёбер отрицательного цикла в прямом порядке без повторения первого ребра.
+% Если оно пусто, расстояния корректны, $2^{62}$ означает недостижимость.
+% Если цикл найден, расстояния --- промежуточные метки, не кратчайшие пути;
+% вершины с расстоянием $-\infty$ отдельно не помечаются.
+% Время $O(nm+n)$, память $O(n)$ без входа.
+% Авторская реализация; отдельная страница Algorithmica не использована.
+% Все вычисляемые суммы обязаны лежать строго между $-2^{62}$ и $2^{62}$.
+% Достаточное условие: $n\max(1,m)W<2^{62}$, где $|w|\le W$;
+% это математическое ограничение, само произведение в \texttt{ll} вычислять
+% не следует. Оно учитывает релаксации внутри прохода и отрицательные циклы.
+% Насыщение снизу не применяется: оно может скрыть отрицательный цикл.
+%
+% Обход из вершин, улучшенных на $n$-м проходе, отмечает все вершины
+% с неограниченным снизу расстоянием. Нулевые начальные метки всех вершин
+% позволяют искать отрицательный цикл во всём графе, а не только достижимый.
+
+\section{Минимальный остовный лес: алгоритм Краскала}
+Для неориентированных рёбер (конец, конец, вес) возвращает суммарный вес минимального остовного леса и ID выбранных рёбер.
+Вершины нумеруются с нуля; отрицательные веса, петли и кратные рёбра допустимы, пустой граф даёт нулевой вес и пустой список.
+Все промежуточные суммы весов помещаются в \texttt{ll}; время $O(n+m\log(m+1)+m\alpha(n))$, память $O(n+m)$.
+\begin{lstlisting}[name=extra_graph_kruskal]
+pair<ll, vector<int>> kruskal(
+        int n, const vector<tuple<int, int, ll>>& edges) {
+    vector<int> parent(n), size(n, 1), order(edges.size()), chosen;
+    iota(parent.begin(), parent.end(), 0);
+    iota(order.begin(), order.end(), 0);
+    auto root = [&](int vertex) {
+        while (parent[vertex] != vertex) {
+            parent[vertex] = parent[parent[vertex]];
+            vertex = parent[vertex];
+        }
+        return vertex;
+    };
+    sort(order.begin(), order.end(), [&](int first, int second) {
+        return pair{get<2>(edges[first]), first} <
+               pair{get<2>(edges[second]), second};
+    });
+    ll weightSum = 0;
+    for (int id : order) {
+        auto [from, to, weight] = edges[id];
+        int first = root(from), second = root(to);
+        if (first == second) continue;
+        if (size[first] < size[second]) swap(first, second);
+        parent[second] = first;
+        size[first] += size[second];
+        chosen.push_back(id);
+        weightSum += weight;
+    }
+    return {weightSum, chosen};
+}
+\end{lstlisting}
+% Минимальный по суммарному весу остов каждой компоненты неориентированного
+% графа. \texttt{edges} --- тройки (конец, конец, вес); отрицательные веса
+% допустимы. Результат --- пара: суммарный вес типа \texttt{ll} и номера
+% выбранных рёбер. Для пустого графа получается нулевой вес и пустой список.
+% Время $O(n+m\log(m+1)+m\alpha(n))$, память $O(n+m)$.
+% Материал: \url{https://ru.algorithmica.org/cs/spanning-trees/kruskal/}.
+% Авторская самодостаточная реализация с локальной СНМ.
+% Все промежуточные суммы выбранных весов должны помещаться в \texttt{ll};
+% достаточно, чтобы сумма модулей всех входных весов не превышала
+% \texttt{LLONG\_MAX} (как математическая сумма, без вычисления модуля
+% \texttt{LLONG\_MIN} в \texttt{ll}). Сравнение весов не использует вычитание.
+%
+% В связном графе выбирается $n-1$ ребро; в несвязном возвращается именно лес,
+% а не ошибка. Подъёмы с максимумом на пути в остове помогают искать
+% альтернативный остов и проверять включение рёбер в оптимальные решения.
+
+\section{Алгоритм Куна и минимальное вершинное покрытие}
+Для списков соседей левых вершин \texttt{graph} и размера правой доли \texttt{rightCount} возвращает максимальное паросочетание \texttt{leftMatch}, \texttt{rightMatch} и минимальное вершинное покрытие \texttt{coverLeft}, \texttt{coverRight}.
+Доли нумеруются с нуля независимо, могут быть пустыми; кратные рёбра допустимы, партнёр $-1$ означает свободную вершину.
+Время $O(L(L+m)+R)$, дополнительная память $O(L+R)$, нужен стек глубины $O(L)$.
+\begin{lstlisting}[name=extra_graph_kuhn]
+auto kuhn_cover(const vector<vector<int>>& graph, int rightCount) {
+    struct Result {
+        vector<int> leftMatch, rightMatch, coverLeft, coverRight;
+    };
+    int leftCount = graph.size();
+    Result result{vector<int>(leftCount, -1),
+                  vector<int>(rightCount, -1), {}, {}};
+    vector<char> visited(leftCount);
+    auto augment = [&](auto&& self, int left) -> bool {
+        if (visited[left]) return false;
+        visited[left] = true;
+        for (int right : graph[left]) {
+            int previous = result.rightMatch[right];
+            if (previous == -1 || self(self, previous)) {
+                result.leftMatch[left] = right;
+                result.rightMatch[right] = left;
+                return true;
+            }
+        }
+        return false;
+    };
+    for (int left = 0; left < leftCount; ++left) {
+        fill(visited.begin(), visited.end(), false);
+        augment(augment, left);
+    }
+    vector<char> reachedLeft(leftCount), reachedRight(rightCount);
+    vector<int> stack;
+    for (int left = 0; left < leftCount; ++left) {
+        if (result.leftMatch[left] != -1) continue;
+        reachedLeft[left] = true;
+        stack.push_back(left);
+    }
+    while (!stack.empty()) {
+        int left = stack.back();
+        stack.pop_back();
+        for (int right : graph[left]) {
+            if (right == result.leftMatch[left] || reachedRight[right])
+                continue;
+            reachedRight[right] = true;
+            int next = result.rightMatch[right];
+            if (next != -1 && !reachedLeft[next]) {
+                reachedLeft[next] = true;
+                stack.push_back(next);
+            }
+        }
+    }
+    for (int left = 0; left < leftCount; ++left)
+        if (!reachedLeft[left]) result.coverLeft.push_back(left);
+    for (int right = 0; right < rightCount; ++right)
+        if (reachedRight[right]) result.coverRight.push_back(right);
+    return result;
+}
+\end{lstlisting}
+% Максимальное по мощности паросочетание двудольного графа и минимальное
+% множество вершин, покрывающее все рёбра. \texttt{graph} хранит для каждой
+% левой вершины номера правых; \texttt{rightCount} --- размер правой доли.
+% Доли нумеруются независимо, могут быть пустыми; повторяющиеся рёбра допустимы.
+% Результат содержит \texttt{leftMatch}, \texttt{rightMatch} (партнёры или $-1$),
+% \texttt{coverLeft}, \texttt{coverRight} (списки вершин покрытия).
+% Время $O(L(L+m)+R)$, память $O(L+R)$ без входа; глубина рекурсии до $L$.
+% Материал: \url{https://ru.algorithmica.org/cs/matching/kuhn/}.
+% Авторский код, включая восстановление покрытия по теореме Кёнига:
+% из свободных левых вершин отмечаются чередующиеся пути, ответ ---
+% неотмеченные левые и отмеченные правые вершины.
+% Для глубокой рекурсии нужен достаточный стек или итеративная версия.
+%
+% Метки с номером обхода избавляют от очистки массива перед каждой попыткой.
+% Меньшую долю выгодно считать левой. Хопкрофт---Карп улучшает асимптотику
+% до $O((L+R+m)\sqrt{L+R})$; дополнение минимального покрытия даёт
+% максимальное независимое множество двудольного графа.
+

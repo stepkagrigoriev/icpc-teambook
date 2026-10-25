@@ -1,0 +1,321 @@
+\iffalse
+% \section{Дополнительные строковые алгоритмы: соглашения}
+% Каждый листинг самостоятельный; общий префикс:
+% \texttt{\#include <bits/stdc++.h>},
+% \texttt{using namespace std; using ll=long long; using db=double;}.
+% В листингах приведены только функции; все структуры локальны.
+% Строки состоят из произвольных байтов, включая нулевой; лексикографический
+% порядок задаётся значениями \texttt{unsigned char}, а не кодовыми точками Unicode.
+% Индексы и длины имеют тип \texttt{int}, счётчики --- \texttt{ll}.
+% Индексация с нуля, отрезки полуоткрытые. Пустые строки допустимы.
+% Длины строк не превосходят $(\texttt{INT\_MAX}-3)/2$; память должна вмещать
+% все создаваемые массивы и состояния, результаты счётчиков --- помещаться в \texttt{ll}.
+% Все реализации написаны самостоятельно, а не скопированы из Algorithmica.
+\fi
+\section{Суффиксный массив удвоением и массив LCP}
+Для строки байтов возвращает \texttt{suffixOrder[i]} --- начало $i$-го непустого суффикса в порядке \texttt{unsigned char}, и \texttt{lcp[i]} --- длину общего префикса суффиксов рангов $i$ и $i+1$.
+Размеры ответов $n$ и $\max(0,n-1)$; пустая строка и нулевые байты допустимы, $n\le(\texttt{INT\_MAX}-3)/2$.
+Время $O(n\log(n+1))$, память $O(n)$.
+\begin{lstlisting}[name=extra_string_suffix_array]
+pair<vector<int>, vector<int>> suffix_array_lcp(const string& text) {
+    int n = int(text.size()), size = n + 1;
+    vector<int> symbols(size), order(size), rank(size);
+    for (int i = 0; i < n; ++i)
+        symbols[i] = int(static_cast<unsigned char>(text[i])) + 1;
+    vector<int> count(max(size, 257), 0);
+    for (int symbol : symbols) ++count[symbol];
+    for (int i = 1; i < 257; ++i) count[i] += count[i - 1];
+    for (int i = size - 1; i >= 0; --i)
+        order[--count[symbols[i]]] = i;
+    int classes = 1;
+    for (int i = 1; i < size; ++i) {
+        if (symbols[order[i]] != symbols[order[i - 1]]) ++classes;
+        rank[order[i]] = classes - 1;
+    }
+    vector<int> shifted(size), nextRank(size);
+    for (int length = 1; length < size;) {
+        for (int i = 0; i < size; ++i) {
+            shifted[i] = order[i] - length;
+            if (shifted[i] < 0) shifted[i] += size;
+        }
+        fill(count.begin(), count.begin() + classes, 0);
+        for (int index : shifted) ++count[rank[index]];
+        for (int i = 1; i < classes; ++i) count[i] += count[i - 1];
+        for (int i = size - 1; i >= 0; --i)
+            order[--count[rank[shifted[i]]]] = shifted[i];
+        int nextClasses = 1;
+        nextRank[order[0]] = 0;
+        for (int i = 1; i < size; ++i) {
+            int current = order[i], previous = order[i - 1];
+            if (rank[current] != rank[previous] ||
+                rank[(current + length) % size] !=
+                rank[(previous + length) % size]) ++nextClasses;
+            nextRank[current] = nextClasses - 1;
+        }
+        rank.swap(nextRank);
+        classes = nextClasses;
+        if (length >= size - length) break;
+        length *= 2;
+    }
+    order.erase(order.begin());
+    vector<int> position(n), lcp(max(0, n - 1));
+    for (int i = 0; i < n; ++i) position[order[i]] = i;
+    int matched = 0;
+    for (int start = 0; start < n; ++start) {
+        int place = position[start];
+        if (place == n - 1) {
+            matched = 0;
+            continue;
+        }
+        int other = order[place + 1];
+        while (start + matched < n && other + matched < n &&
+               text[start + matched] == text[other + matched]) ++matched;
+        lcp[place] = matched;
+        if (matched > 0) --matched;
+    }
+    return {order, lcp};
+}
+\end{lstlisting}
+% Сортирует непустые суффиксы строки. Возвращает пару \texttt{suffixOrder, lcp}:
+% \texttt{suffixOrder[i]} --- начало $i$-го суффикса в лексикографическом порядке,
+% \texttt{lcp[i]} --- длина общего префикса суффиксов с рангами $i$ и $i+1$.
+% Размеры массивов равны $n$ и $\max(0,n-1)$. Используются удвоение с сортировкой
+% подсчётом и алгоритм Касаи. Время $O(n\log(n+1))$, память $O(n)$.
+% Служебный символ меньше любого байта и не входит в результат.
+%
+% RMQ по LCP даёт длину общего префикса произвольных суффиксов.
+% Двоичный поиск по массиву находит вхождения образца; число различных
+% непустых подстрок равно $n(n+1)/2-\sum lcp$, с вычислением произведения в \texttt{ll}.
+
+\section{Суффиксный автомат: различные подстроки и вхождения}
+Для строки \texttt{text} и образцов \texttt{patterns} возвращает число различных непустых подстрок и числа вхождений образцов в исходном порядке.
+Строки состоят из произвольных байтов; перекрытия учитываются, пустой образец имеет $n+1$ вхождений, отсутствующий --- 0.
+Длины не превосходят $(\texttt{INT\_MAX}-3)/2$, счётчики помещаются в \texttt{ll}; время $O((n+m)\log(\sigma+1)+q)$, память $O(n+q)$ при суммарной длине образцов $m$, их числе $q$ и $\sigma\le256$.
+\begin{lstlisting}[name=extra_string_suffix_automaton]
+pair<ll, vector<ll>> substring_counts(const string& text,
+        const vector<string>& patterns) {
+    struct State {
+        int length = 0, link = -1;
+        map<unsigned char, int> next;
+        ll occurrences = 0;
+    };
+    int n = int(text.size()), last = 0;
+    vector<State> states(1);
+    states.reserve(2 * n + 1);
+    for (unsigned char symbol : text) {
+        int current = int(states.size());
+        states.emplace_back();
+        states[current].length = states[last].length + 1;
+        states[current].occurrences = 1;
+        int parent = last;
+        while (parent != -1 && !states[parent].next.count(symbol)) {
+            states[parent].next[symbol] = current;
+            parent = states[parent].link;
+        }
+        if (parent == -1) states[current].link = 0;
+        else {
+            int target = states[parent].next.at(symbol);
+            if (states[parent].length + 1 == states[target].length)
+                states[current].link = target;
+            else {
+                int clone = int(states.size());
+                State copy = states[target];
+                copy.length = states[parent].length + 1;
+                copy.occurrences = 0;
+                states.push_back(move(copy));
+                while (parent != -1) {
+                    auto edge = states[parent].next.find(symbol);
+                    if (edge == states[parent].next.end() ||
+                        edge->second != target) break;
+                    edge->second = clone;
+                    parent = states[parent].link;
+                }
+                states[target].link = states[current].link = clone;
+            }
+        }
+        last = current;
+    }
+    int size = int(states.size());
+    vector<int> count(n + 1), order(size);
+    for (const auto& state : states) ++count[state.length];
+    for (int i = 1; i <= n; ++i) count[i] += count[i - 1];
+    for (int i = size - 1; i >= 0; --i)
+        order[--count[states[i].length]] = i;
+    ll distinct = 0;
+    for (int i = size - 1; i > 0; --i) {
+        int vertex = order[i], parent = states[vertex].link;
+        states[parent].occurrences += states[vertex].occurrences;
+        distinct += states[vertex].length - states[parent].length;
+    }
+    vector<ll> answer;
+    for (const string& pattern : patterns) {
+        if (pattern.empty()) {
+            answer.push_back(ll(n) + 1);
+            continue;
+        }
+        int vertex = 0;
+        for (unsigned char symbol : pattern) {
+            auto edge = states[vertex].next.find(symbol);
+            if (edge == states[vertex].next.end()) {
+                vertex = -1;
+                break;
+            }
+            vertex = edge->second;
+        }
+        answer.push_back(vertex == -1 ? 0 : states[vertex].occurrences);
+    }
+    return {distinct, answer};
+}
+\end{lstlisting}
+% Одна функция строит автомат по \texttt{text} и возвращает пару:
+% число различных непустых подстрок и массив чисел вхождений образцов
+% из \texttt{patterns} в исходном порядке. Перекрытия учитываются;
+% пустой образец имеет $n+1$ вхождений, отсутствующий --- ноль.
+% Клоны не получают собственных вхождений; частоты распространяются по
+% суффиксным ссылкам в порядке убывания длины.
+% При $m$ --- суммарной длине образцов и $q$ --- их количестве время
+% $O((n+m)\log(\sigma+1)+q)$, память $O(n+q)$, где $\sigma\le256$.
+%
+% Для малого фиксированного алфавита переходы можно хранить массивами.
+% Сохранение позиции первого окончания позволяет восстанавливать подстроки;
+% динамика по переходам позволяет искать $k$-ю лексикографическую подстроку.
+
+\iffalse
+\section{Палиндромное дерево}
+Для строки произвольных байтов возвращает пары \texttt{length, occurrences} для различных непустых палиндромов в порядке первого появления.
+Разные палиндромы одной длины представлены отдельно, перекрытия учитываются, служебные корни не возвращаются; пустая строка допустима.
+Требуется $n\le(\texttt{INT\_MAX}-3)/2$, счётчики помещаются в \texttt{ll}; время $O(n\log(\sigma+1))$, память $O(n)$, $\sigma\le256$.
+\begin{lstlisting}[name=extra_string_palindromic_tree]
+vector<pair<int, ll>> palindrome_counts(const string& text) {
+    struct Node {
+        int length = 0, link = 0;
+        map<unsigned char, int> next;
+        ll occurrences = 0;
+    };
+    int n = int(text.size());
+    vector<Node> nodes(2);
+    nodes.reserve(n + 2);
+    nodes[0].length = -1;
+    int last = 1;
+    auto extendable = [&](int vertex, int position) {
+        while (true) {
+            int left = position - 1 - nodes[vertex].length;
+            if (left >= 0 && text[left] == text[position]) return vertex;
+            vertex = nodes[vertex].link;
+        }
+    };
+    for (int position = 0; position < n; ++position) {
+        unsigned char symbol = static_cast<unsigned char>(text[position]);
+        int parent = extendable(last, position);
+        auto edge = nodes[parent].next.find(symbol);
+        if (edge != nodes[parent].next.end()) last = edge->second;
+        else {
+            int current = int(nodes.size());
+            nodes.emplace_back();
+            nodes[current].length = nodes[parent].length + 2;
+            nodes[parent].next[symbol] = current;
+            if (nodes[current].length == 1) nodes[current].link = 1;
+            else {
+                int suffix = extendable(nodes[parent].link, position);
+                nodes[current].link = nodes[suffix].next.at(symbol);
+            }
+            last = current;
+        }
+        ++nodes[last].occurrences;
+    }
+    for (int vertex = int(nodes.size()) - 1; vertex >= 2; --vertex)
+        nodes[nodes[vertex].link].occurrences += nodes[vertex].occurrences;
+    vector<pair<int, ll>> answer;
+    for (int vertex = 2; vertex < int(nodes.size()); ++vertex)
+        answer.emplace_back(nodes[vertex].length, nodes[vertex].occurrences);
+    return answer;
+}
+\end{lstlisting}
+% Возвращает по одной паре \texttt{length, occurrences} для каждого различного
+% непустого палиндрома в порядке его первого появления при проходе слева направо.
+% Разные палиндромы одной длины представлены отдельными элементами;
+% число элементов --- число различных палиндромов. Вхождения могут перекрываться.
+% Служебные корни длин $-1$ и $0$ не возвращаются. Время
+% $O(n\log(\sigma+1))$, память $O(n)$, где $\sigma\le256$.
+%
+% Сохранение позиции первого окончания восстанавливает сами палиндромы.
+% Серийные ссылки ускоряют динамику разбиения строки на минимальное число
+% палиндромов; массивные переходы полезны при малом алфавите.
+
+\fi
+\section{Минимальный циклический сдвиг: алгоритм Бута}
+Для строки возвращает наименьший индекс начала лексикографически минимального циклического сдвига; байты сравниваются как \texttt{unsigned char}.
+Для пустой строки ответ 0; требуется $n\le(\texttt{INT\_MAX}-3)/2$.
+Время $O(n)$, дополнительная память $O(1)$.
+\begin{lstlisting}[name=extra_string_booth]
+int minimal_cyclic_shift(const string& text) {
+    int n = int(text.size());
+    if (n == 0) return 0;
+    int first = 0, second = 1, matched = 0;
+    while (first < n && second < n && matched < n) {
+        unsigned char a = static_cast<unsigned char>(text[(first + matched) % n]);
+        unsigned char b = static_cast<unsigned char>(text[(second + matched) % n]);
+        if (a == b) ++matched;
+        else {
+            if (a > b) {
+                first += matched + 1;
+                if (first <= second) first = second + 1;
+            } else {
+                second += matched + 1;
+                if (second <= first) second = first + 1;
+            }
+            matched = 0;
+        }
+    }
+    return min(first, second);
+}
+\end{lstlisting}
+% Возвращает наименьший индекс начала лексикографически минимального
+% циклического сдвига. Для пустой строки возвращает 0; при нескольких
+% одинаковых минимальных сдвигах выбирается самый ранний.
+% Время $O(n)$, дополнительная память $O(1)$: удвоенная строка не создаётся.
+%
+% Минимальный сдвиг задаёт каноническое представление ожерелья.
+% Для максимального сдвига нужно обратить сравнение; сравнение также
+% можно адаптировать к массивам целых чисел.
+
+\iffalse
+\section{Разложение Дюваля на слова Линдона}
+Для строки байтов возвращает полуинтервалы множителей единственного разложения на лексикографически невозрастающую последовательность слов Линдона; сравнение по \texttt{unsigned char}.
+Слово Линдона строго меньше каждого своего непустого собственного суффикса; одинаковые множители выдаются отдельно, пустой строке соответствует пустой ответ.
+Требуется $n\le(\texttt{INT\_MAX}-3)/2$; время $O(n)$, дополнительная память $O(1)$ без ответа размера $O(n)$.
+\begin{lstlisting}[name=extra_string_duval]
+vector<pair<int, int>> lyndon_factorization(const string& text) {
+    int n = int(text.size()), left = 0;
+    vector<pair<int, int>> factors;
+    while (left < n) {
+        int right = left + 1, compared = left;
+        while (right < n) {
+            unsigned char a = static_cast<unsigned char>(text[compared]);
+            unsigned char b = static_cast<unsigned char>(text[right]);
+            if (a > b) break;
+            if (a < b) compared = left;
+            else ++compared;
+            ++right;
+        }
+        int length = right - compared;
+        while (left <= compared) {
+            factors.emplace_back(left, left + length);
+            left += length;
+        }
+    }
+    return factors;
+}
+\end{lstlisting}
+% Возвращает границы \texttt{[left, right)} единственного разложения строки
+% на лексикографически невозрастающую последовательность слов Линдона.
+% Слово Линдона строго меньше каждого своего непустого собственного суффикса.
+% Одинаковые множители возвращаются отдельно. Пустой строке соответствует
+% пустой ответ. Время $O(n)$, дополнительная память $O(1)$ без учёта ответа,
+% ответ занимает $O(n)$.
+%
+% Разложение удвоенной строки позволяет найти минимальный циклический сдвиг.
+% Границы можно обрабатывать сразу вместо хранения, если нужны только
+% число множителей или агрегаты по ним.
+
+\fi

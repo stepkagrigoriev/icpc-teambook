@@ -1,0 +1,989 @@
+\section{Безопасная модульная арифметика}
+Вычисляет сумму, произведение и степень по модулю без переполнения.
+Нужны $1\le m\le\texttt{LLONG\_MAX}$, остатки $0\le a,b<m$ и показатель $0\le e\le\texttt{LLONG\_MAX}$.
+Умножение работает за $O(\log(b+1))$, степень --- за $O(\log(e+1)\log m)$; память $O(1)$.
+\begin{lstlisting}[name=extra_math_mod]
+ll addMod(ll a, ll b, ll modulus) {
+    assert(modulus > 0 && a >= 0 && a < modulus && b >= 0 && b < modulus);
+    return a >= modulus - b ? a - (modulus - b) : a + b;
+}
+ll multiplyMod(ll a, ll b, ll modulus) {
+    assert(modulus > 0 && a >= 0 && a < modulus && b >= 0 && b < modulus);
+    ll result = 0;
+    while (b) {
+        if (b & 1) result = addMod(result, a, modulus);
+        a = addMod(a, a, modulus);
+        b >>= 1;
+    }
+    return result;
+}
+ll powerMod(ll a, ll exponent, ll modulus) {
+    assert(modulus > 0 && a >= 0 && a < modulus && exponent >= 0);
+    ll result = 1 % modulus;
+    while (exponent) {
+        if (exponent & 1) result = multiplyMod(result, a, modulus);
+        a = multiplyMod(a, a, modulus);
+        exponent >>= 1;
+    }
+    return result;
+}
+\end{lstlisting}
+% Для $1\le m\le\texttt{LLONG\_MAX}$ и нормализованных $0\le a,b<m$
+% вычисляет сумму и произведение без переполнения. Степень принимает
+% $0\le e\le\texttt{LLONG\_MAX}$. Время умножения $O(\log(b+1))$,
+% степени $O(\log(e+1)\log m)$, память $O(1)$.
+% Самодостаточный листинг. Сложение заменено вычитанием расстояния до модуля.
+%
+% Для $m\le2\cdot10^9$ прямое произведение двух остатков безопасно в
+% \texttt{ll} и значительно быстрее. Отрицательные аргументы сначала нормализуют.
+
+\section{Китайская теорема об остатках без взаимной простоты}
+Объединяет сравнения $x\equiv a\pmod m$ и $x\equiv b\pmod n$, даже если модули не взаимно просты.
+Для остатков типа \texttt{ll} и $1\le m,n\le\texttt{INT\_MAX}$ возвращает минимальный неотрицательный остаток и НОК либо пустой \texttt{optional}, если решения нет.
+Время $O(\log\max(m,n))$; при последовательном объединении каждый входной модуль должен по-прежнему помещаться в \texttt{int}.
+\begin{lstlisting}[name=extra_math_crt]
+optional<pair<ll, ll>> chineseRemainder(ll a, int m, ll b, int n) {
+    assert(m > 0 && n > 0);
+    a %= m; if (a < 0) a += m;
+    b %= n; if (b < 0) b += n;
+    ll r = m, s = n, x = 1, y = 0;
+    while (s) {
+        ll q = r / s;
+        ll nextR = r - q * s, nextX = x - q * y;
+        r = s; s = nextR; x = y; y = nextX;
+    }
+    ll difference = b - a;
+    if (difference % r) return nullopt;
+    ll reduced = n / r, period = (ll)m * reduced;
+    x %= reduced; if (x < 0) x += reduced;
+    ll step = difference / r % reduced;
+    if (step < 0) step += reduced;
+    step = step * x % reduced;
+    return pair<ll, ll>{(a + (ll)m * step) % period, period};
+}
+\end{lstlisting}
+% Объединяет $x\equiv a\pmod m$, $x\equiv b\pmod n$; остатки типа
+% \texttt{ll}, $1\le m,n\le\texttt{INT\_MAX}$. Возвращает
+% \texttt{optional<pair<ll,ll>>}: минимальный неотрицательный остаток и НОК,
+% либо пустое значение при несовместности. Время $O(\log\max(m,n))$.
+% НОК может превосходить \texttt{int}, но не $\texttt{INT\_MAX}^2$.
+% Самодостаточно; совместность эквивалентна $\gcd(m,n)\mid(b-a)$.
+%
+% Для системы с большим числом сравнений нужен отдельный вариант с
+% \texttt{ll}-модулями и проверкой переполнения НОК; этот интерфейс не подходит
+% для повторного объединения результата, если его модуль уже не помещается в \texttt{int}.
+
+\section{Miller--Rabin и Pollard rho}
+Проверяет простоту положительного \texttt{ll} и ищет делитель числа $n>1$; для простого числа возвращает само число, а единица не считается простой.
+Нужны функции модульной арифметики \texttt{extra\_math\_mod} и внешний генератор случайных чисел.
+Проверка простоты детерминирована, а поиск делителя $p$ требует ожидаемо $O(\sqrt p)$ умножений по $O(\log n)$ каждое, без гарантии общего времени; память $O(1)$.
+\begin{lstlisting}[name=extra_math_rho]
+bool isPrime64(ll number) {
+    assert(number > 0);
+    if (number < 2) return false;
+    for (int prime : {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37}) {
+        if (number % prime == 0) return number == prime;
+    }
+    ll odd = number - 1;
+    int shifts = 0;
+    while (!(odd & 1)) { odd >>= 1; ++shifts; }
+    for (ll base : {2LL, 325LL, 9375LL, 28178LL, 450775LL,
+                    9780504LL, 1795265022LL}) {
+        if (base % number == 0) continue;
+        ll value = powerMod(base % number, odd, number);
+        if (value == 1 || value == number - 1) continue;
+        bool accepted = false;
+        for (int i = 1; i < shifts; ++i) {
+            value = multiplyMod(value, value, number);
+            if (value == number - 1) { accepted = true; break; }
+        }
+        if (!accepted) return false;
+    }
+    return true;
+}
+ll pollardRho(ll number, mt19937_64& random) {
+    assert(number > 1);
+    if (number % 2 == 0) return 2;
+    if (isPrime64(number)) return number;
+    for (;;) {
+        ll constant = uniform_int_distribution<ll>(1, number - 1)(random);
+        ll slow = uniform_int_distribution<ll>(0, number - 1)(random);
+        ll fast = slow, divisor = 1;
+        auto advance = [&](ll value) {
+            return addMod(multiplyMod(value, value, number), constant, number);
+        };
+        for (int iteration = 0; iteration < 200000 && divisor == 1; ++iteration) {
+            slow = advance(slow);
+            fast = advance(advance(fast));
+            divisor = gcd(slow > fast ? slow - fast : fast - slow, number);
+        }
+        if (divisor > 1 && divisor < number) return divisor;
+    }
+}
+\end{lstlisting}
+% Детерминированная проверка простоты для положительного signed \texttt{ll}
+% и поиск нетривиального делителя составного числа. Для $1$ проверка ложна.
+% Rho имеет ожидаемое $O(\sqrt p)$ модульных умножений для наименьшего простого
+% делителя $p$; гарантии времени нет. Каждое умножение стоит $O(\log n)$.
+% Генератор передаётся снаружи, память $O(1)$.
+% Зависимость: \texttt{extra\_math\_mod}. Базы для 64 бит:
+% \url{https://miller-rabin.appspot.com/}. Метод факторизации:
+% \url{https://cp-algorithms.com/algebra/factorization.html}.
+%
+% Пакетный НОД и схема Брента ускоряют rho. Ограничение одного запуска
+% не ограничивает общее время: неудачный случай перезапускается с новыми параметрами.
+
+\section{Факторизация и перечисление делителей}
+Для $1\le n\le\texttt{LLONG\_MAX}$ строит разложение на отсортированные пары $(p,e)$ и список всех положительных делителей по возрастанию.
+Нужны \texttt{extra\_math\_mod}, \texttt{extra\_math\_rho} и внешний генератор; для единицы разложение пусто, список делителей равен $\{1\}$.
+Время факторизации вероятностное, перечисление делителей занимает $O(\tau(n)\log\tau(n))$, память $O(\tau(n)+\log n)$.
+\begin{lstlisting}[name=extra_math_factor]
+vector<pair<ll, int>> factorize(ll number, mt19937_64& random) {
+    assert(number > 0);
+    vector<ll> pending{number}, primes;
+    while (!pending.empty()) {
+        ll value = pending.back(); pending.pop_back();
+        if (value == 1) continue;
+        if (isPrime64(value)) { primes.push_back(value); continue; }
+        ll divisor = pollardRho(value, random);
+        pending.push_back(divisor); pending.push_back(value / divisor);
+    }
+    sort(primes.begin(), primes.end());
+    vector<pair<ll, int>> result;
+    for (ll prime : primes) {
+        if (result.empty() || result.back().first != prime)
+            result.push_back({prime, 0});
+        ++result.back().second;
+    }
+    return result;
+}
+vector<ll> divisors(ll number, mt19937_64& random) {
+    auto factors = factorize(number, random);
+    vector<ll> result{1};
+    for (auto [prime, exponent] : factors) {
+        int size = result.size();
+        ll power = 1;
+        for (int i = 1; i <= exponent; ++i) {
+            power *= prime;
+            for (int j = 0; j < size; ++j) result.push_back(result[j] * power);
+        }
+    }
+    sort(result.begin(), result.end());
+    return result;
+}
+\end{lstlisting}
+% Для $1\le n\le\texttt{LLONG\_MAX}$ возвращает отсортированные пары
+% $(p,e)$ и все положительные делители в порядке возрастания.
+% Время факторизации вероятностное; перечисление $O(\tau(n)\log\tau(n))$,
+% память $O(\tau(n)+\log n)$. Для единицы факторизация пуста, делители --- $\{1\}$.
+% Зависимости: \texttt{extra\_math\_mod}, \texttt{extra\_math\_rho}.
+%
+% Все промежуточные произведения --- делители исходного $n$, поэтому помещаются
+% в \texttt{ll}. Для множества небольших чисел выгоднее решето минимальных делителей.
+
+\section{Линейное решето Эйлера и Мёбиуса}
+По границе $0\le n<\texttt{INT\_MAX}$ строит таблицы функции Эйлера $\varphi$ и функции Мёбиуса $\mu$ на $[0,n]$.
+При наличии индекса $1$ оба значения равны $1$, индекс $0$ содержит технический ноль.
+Время и память $O(n)$; размер таблиц должен укладываться в лимит памяти.
+\begin{lstlisting}[name=extra_math_sieve]
+pair<vector<int>, vector<int>> phiMobius(int limit) {
+    assert(limit >= 0 && limit < INT_MAX);
+    vector<int> phi(limit + 1), mu(limit + 1), smallest(limit + 1), primes;
+    if (limit >= 1) phi[1] = mu[1] = 1;
+    for (int value = 2; value <= limit; ++value) {
+        if (!smallest[value]) {
+            smallest[value] = value; primes.push_back(value);
+            phi[value] = value - 1; mu[value] = -1;
+        }
+        for (int prime : primes) {
+            if (prime > limit / value) break;
+            int next = value * prime;
+            smallest[next] = prime;
+            if (value % prime == 0) {
+                phi[next] = phi[value] * prime;
+                break;
+            }
+            phi[next] = phi[value] * (prime - 1);
+            mu[next] = -mu[value];
+        }
+    }
+    return {phi, mu};
+}
+\end{lstlisting}
+% За $O(n)$ времени и памяти строит $(\varphi,\mu)$ на $[0,n]$,
+% $0\le n<\texttt{INT\_MAX}$. При наличии индекса $1$ оба значения равны $1$;
+% индекс $0$ содержит технический ноль. Требуется достаточно памяти.
+% Самодостаточный листинг.
+%
+% $\varphi(n)=n\prod_{p\mid n}(1-1/p)$;
+% $\mu(n)=0$ при квадратном простом делителе, иначе $(-1)^{\omega(n)}$.
+% Произведения в решете не превосходят текущего индекса.
+
+\section{Факториалы и биномиальные коэффициенты по простому модулю}
+Предвычисляет факториалы и обратные факториалы до $N$ за $O(N+\log p)$ и отвечает на запрос $C_n^k\bmod p$ за $O(1)$.
+Модуль $2\le p\le2\cdot10^9$ должен быть простым, а $0\le n\le N<p$; простота не проверяется.
+Обе таблицы нужно брать из одного вызова с тем же модулем; для составного модуля или $N\ge p$ этот способ не подходит.
+\begin{lstlisting}[name=extra_math_binomial]
+int primePower(int base, ll exponent, int prime) {
+    assert(prime >= 2 && prime <= 2000000000 && exponent >= 0);
+    base %= prime; if (base < 0) base += prime;
+    int result = 1;
+    while (exponent) {
+        if (exponent & 1) result = (ll)result * base % prime;
+        base = (ll)base * base % prime; exponent >>= 1;
+    }
+    return result;
+}
+pair<vector<int>, vector<int>> factorialTables(int limit, int prime) {
+    assert(limit >= 0 && limit < prime && prime <= 2000000000);
+    vector<int> factorial(limit + 1, 1), inverse(limit + 1, 1);
+    for (int i = 1; i <= limit; ++i) factorial[i] = (ll)factorial[i - 1] * i % prime;
+    inverse[limit] = primePower(factorial[limit], prime - 2, prime);
+    for (int i = limit; i > 0; --i) inverse[i - 1] = (ll)inverse[i] * i % prime;
+    return {factorial, inverse};
+}
+int binomial(int n, int k, int prime, const vector<int>& factorial,
+             const vector<int>& inverse) {
+    assert(prime >= 2 && prime <= 2000000000 && n >= 0 && n < prime);
+    assert(factorial.size() == inverse.size() && n < (ll)factorial.size());
+    if (k < 0 || k > n) return 0;
+    return (ll)factorial[n] * inverse[k] % prime * inverse[n - k] % prime;
+}
+\end{lstlisting}
+% Предвычисляет факториалы и обратные факториалы до $N<p$ за $O(N+\log p)$,
+% запрос $C_n^k$ за $O(1)$. Простой $2\le p\le2\cdot10^9$ --- предусловие,
+% не проверяется. Остатки нормализованы, произведения меньше $4\cdot10^{18}$.
+% Самодостаточно. Таблицы должны происходить из одного вызова с тем же модулем.
+%
+% При $N\ge p$ факториал обращать нельзя; нужны разложение по степеням $p$
+% или теорема Лукаса. Для составного модуля этот код неприменим.
+
+\iffalse
+\section{Теорема Лукаса}
+\subsection*{Для чего нужен}
+Вычисляет $C_n^k\bmod p$ для $0\le n,k\le\texttt{LLONG\_MAX}$,
+простого $p$ и таблиц до $p-1$. Подготовка $O(p)$ памяти и времени,
+запрос $O(\log_p(n+1)+1)$. Практически нужен небольшой $p$.
+\subsection*{Реализация}
+Зависимость: \texttt{extra\_math\_binomial}.
+\begin{lstlisting}[name=extra_math_lucas]
+int lucas(ll n, ll k, int prime, const vector<int>& factorial,
+          const vector<int>& inverse) {
+    assert(n >= 0 && k >= 0 && prime >= 2 && prime <= 2000000000);
+    assert(factorial.size() == (ll)prime && inverse.size() == (ll)prime);
+    if (k > n) return 0;
+    int result = 1;
+    while (n || k) {
+        int a = n % prime, b = k % prime;
+        if (b > a) return 0;
+        result = (ll)result * binomial(a, b, prime, factorial, inverse) % prime;
+        n /= prime; k /= prime;
+    }
+    return result;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Формула: $C_n^k\equiv\prod_i C_{n_i}^{k_i}\pmod p$ по цифрам в базе $p$.
+Для большого $p$ можно вычислять отдельные малые коэффициенты без полной таблицы.
+
+
+\fi
+\iffalse
+\section{Дискретный логарифм BSGS}
+\subsection*{Для чего нужен}
+Для $2\le m\le2\cdot10^9$, $0\le a,b<m$, $\gcd(a,m)=1$
+возвращает наименьший $x\ge0$ с $a^x=b\pmod m$ либо пустое значение.
+Время $O(\sqrt m\log m)$ с упорядоченной таблицей, память $O(\sqrt m)$.
+\subsection*{Реализация}
+Самодостаточно; поиск устроен как $a^{iq+j}=b$ и сканирует блоки по возрастанию.
+\begin{lstlisting}[name=extra_math_bsgs]
+optional<ll> discreteLog(int a, int b, int modulus) {
+    assert(modulus >= 2 && modulus <= 2000000000);
+    assert(a >= 0 && a < modulus && b >= 0 && b < modulus && gcd(a, modulus) == 1);
+    int block = 1;
+    while ((ll)block * block < modulus) ++block;
+    map<int, int> baby;
+    int value = 1;
+    for (int j = 0; j < block; ++j) {
+        baby.emplace(value, j);
+        value = (ll)value * a % modulus;
+    }
+    ll r = value, s = modulus, x = 1, y = 0;
+    while (s) {
+        ll q = r / s, nr = r - q * s, nx = x - q * y;
+        r = s; s = nr; x = y; y = nx;
+    }
+    x %= modulus; if (x < 0) x += modulus;
+    value = b;
+    for (int i = 0; i <= block; ++i) {
+        auto found = baby.find(value);
+        if (found != baby.end()) return (ll)i * block + found->second;
+        value = value * x % modulus;
+    }
+    return nullopt;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+При $\gcd(a,m)>1$ требуется расширенный BSGS с последовательным удалением НОД.
+Хеш-таблица сокращает ожидаемое время до $O(\sqrt m)$.
+
+
+\fi
+\iffalse
+\section{Первообразный корень простого модуля}
+\subsection*{Для чего нужен}
+Находит минимальный генератор группы ненулевых остатков для простого
+$2\le p\le2\cdot10^9$ (простота --- предусловие).
+Факторизация $p-1$ за $O(\sqrt p)$; на кандидата $O(\omega(p-1)\log p)$.
+\subsection*{Реализация}
+Зависимость: \texttt{extra\_math\_binomial}, нужна только \texttt{primePower}.
+\begin{lstlisting}[name=extra_math_root]
+int primitiveRoot(int prime) {
+    assert(prime >= 2 && prime <= 2000000000);
+    if (prime == 2) return 1;
+    int remaining = prime - 1;
+    vector<int> factors;
+    for (int divisor = 2; divisor <= remaining / divisor; ++divisor) {
+        if (remaining % divisor) continue;
+        factors.push_back(divisor);
+        while (remaining % divisor == 0) remaining /= divisor;
+    }
+    if (remaining > 1) factors.push_back(remaining);
+    for (int candidate = 2; candidate < prime; ++candidate) {
+        bool good = true;
+        for (int factor : factors)
+            if (primePower(candidate, (prime - 1) / factor, prime) == 1) {
+                good = false; break;
+            }
+        if (good) return candidate;
+    }
+    return -1;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Критерий: $g^{(p-1)/q}\ne1$ для всех простых $q\mid p-1$.
+Для составного модуля группа не обязательно циклическая.
+
+
+\fi
+\iffalse
+\section{Интерполяция Лагранжа в последовательных точках}
+По значениям $y_0,\ldots,y_{n-1}$ в точках $0,\ldots,n-1$ вычисляет значение полинома степени $<n$ в произвольной точке $x$ типа \texttt{ll}.
+Нужны простой $2\le p\le2\cdot10^9$, $1\le n\le p$, остатки $0\le y_i<p$ и функции \texttt{extra\_math\_binomial}.
+Время $O(n+\log p)$, память $O(n)$.
+\begin{lstlisting}[name=extra_math_lagrange]
+int lagrangeConsecutive(const vector<int>& values, ll x, int prime) {
+    assert(!values.empty() && values.size() <= (ll)prime && prime <= 2000000000);
+    int n = values.size();
+    for (int value : values) assert(value >= 0 && value < prime);
+    x %= prime; if (x < 0) x += prime;
+    if (x < n) return values[x];
+    auto [factorial, inverse] = factorialTables(n - 1, prime);
+    vector<int> prefix(n + 1, 1), suffix(n + 1, 1);
+    for (int i = 0; i < n; ++i)
+        prefix[i + 1] = (ll)prefix[i] * ((x - i + prime) % prime) % prime;
+    for (int i = n - 1; i >= 0; --i)
+        suffix[i] = (ll)suffix[i + 1] * ((x - i + prime) % prime) % prime;
+    ll result = 0;
+    for (int i = 0; i < n; ++i) {
+        ll term = (ll)values[i] * prefix[i] % prime * suffix[i + 1] % prime;
+        term = term * inverse[i] % prime * inverse[n - 1 - i] % prime;
+        if ((n - 1 - i) & 1) term = (prime - term) % prime;
+        result = (result + term) % prime;
+    }
+    return result;
+}
+\end{lstlisting}
+\fi
+
+% По $y_0,\ldots,y_{n-1}$ вычисляет значение единственного полинома степени
+% $<n$ в точке $x$. Простой $2\le p\le2\cdot10^9$, $1\le n\le p$,
+% $0\le y_i<p$, $x$ --- любой \texttt{ll}. Время и память $O(n)$ плюс $O(\log p)$.
+% Зависимость: \texttt{extra\_math\_binomial}.
+%
+% Знаменатель $\prod_{j\ne i}(i-j)=i!(-1)^{n-1-i}(n-1-i)!$.
+% Для произвольных узлов прямая подготовка знаменателей требует $O(n^2)$.
+
+\iffalse
+\section{Знаковые floor и ceil деления}
+Возвращает точные $\lfloor a/b\rfloor$ и $\lceil a/b\rceil$ для знаковых целых, например при вычислении границ неравенств.
+Аргументы имеют тип \texttt{ll}; запрещены $b=0$ и пара $(\texttt{LLONG\_MIN},-1)$, для которой ответ не представим.
+Время и память $O(1)$.
+\begin{lstlisting}[name=extra_math_division]
+ll floorDivide(ll a, ll b) {
+    assert(b != 0 && !(a == LLONG_MIN && b == -1));
+    ll quotient = a / b, remainder = a % b;
+    return quotient - (remainder != 0 && ((remainder < 0) != (b < 0)));
+}
+ll ceilDivide(ll a, ll b) {
+    assert(b != 0 && !(a == LLONG_MIN && b == -1));
+    ll quotient = a / b, remainder = a % b;
+    return quotient + (remainder != 0 && ((remainder < 0) == (b < 0)));
+}
+\end{lstlisting}
+\fi
+
+% Точные $\lfloor a/b\rfloor$, $\lceil a/b\rceil$ за $O(1)$ для любых
+% \texttt{ll}, кроме $b=0$ и пары $(\texttt{LLONG\_MIN},-1)$,
+% у которой ответ не представим. Нельзя заменять формулой $(a+b-1)/b$.
+% Самодостаточно; не берёт модуль отрицательного предельного числа.
+%
+% Полезно для целочисленных границ неравенств; при умножении границ
+% контроль переполнения остаётся обязанностью вызывающего кода.
+
+\section{Блоки одинакового частного}
+Разбивает индексы $[1,n]$ на максимальные блоки $(l,r,q)$ с одинаковым $\lfloor n/i\rfloor=q$ для суммирования сразу по блокам.
+Вход $0\le n\le\texttt{LLONG\_MAX}$; для нуля возвращает пустой список.
+Время и память $O(\sqrt n)$, поэтому число блоков должно быть практически допустимым.
+\begin{lstlisting}[name=extra_math_quotients]
+vector<tuple<ll, ll, ll>> quotientBlocks(ll n) {
+    assert(n >= 0);
+    vector<tuple<ll, ll, ll>> result;
+    for (ll left = 1; left <= n;) {
+        ll quotient = n / left, right = n / quotient;
+        result.emplace_back(left, right, quotient);
+        if (right == n) break;
+        left = right + 1;
+    }
+    return result;
+}
+\end{lstlisting}
+% Разбивает $[1,n]$ на тройки $(l,r,q)$, где $\lfloor n/i\rfloor=q$.
+% $0\le n\le\texttt{LLONG\_MAX}$; время и память $O(\sqrt n)$,
+% на практике требуется посильное число блоков. Для $n=0$ ответ пуст.
+% Самодостаточно; последний блок обрабатывается без вычисления $n+1$.
+%
+% $\sum_{i=1}^n f(\lfloor n/i\rfloor)=\sum_{(l,r,q)}(r-l+1)f(q)$.
+% Для больших $n$ можно обрабатывать блоки сразу, не сохраняя их; сумма может
+% не помещаться в \texttt{ll}, даже когда все границы помещаются.
+
+\section{NTT по модулю 998244353}
+Вычисляет прямое и обратное преобразования и свёртку полиномов по модулю $998244353$, возвращая остатки коэффициентов.
+Коэффициенты должны лежать в $[0,998244353)$, длина преобразования --- степень двойки не больше $2^{23}$, а для непустой свёртки $|a|+|b|-1\le2^{23}$.
+Пустой множитель даёт пустой результат; время $O(N\log N)$, память $O(N)$.
+\begin{lstlisting}[name=extra_math_ntt]
+void ntt(vector<int>& values, bool inverse) {
+    int n = values.size(), modulus = 998244353;
+    assert(n > 0 && n <= (1 << 23) && (n & (n - 1)) == 0);
+    for (int value : values) assert(value >= 0 && value < modulus);
+    auto power = [&](int base, int exponent) {
+        int result = 1;
+        while (exponent) {
+            if (exponent & 1) result = (ll)result * base % modulus;
+            base = (ll)base * base % modulus; exponent >>= 1;
+        }
+        return result;
+    };
+    for (int i = 1, j = 0; i < n; ++i) {
+        int bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) swap(values[i], values[j]);
+    }
+    for (int length = 2; length <= n; length <<= 1) {
+        int root = power(3, (modulus - 1) / length);
+        if (inverse) root = power(root, modulus - 2);
+        for (int start = 0; start < n; start += length) {
+            int weight = 1;
+            for (int j = 0; j < length / 2; ++j) {
+                int a = values[start + j];
+                int b = (ll)values[start + j + length / 2] * weight % modulus;
+                values[start + j] = (a + b) % modulus;
+                values[start + j + length / 2] = (a - b + modulus) % modulus;
+                weight = (ll)weight * root % modulus;
+            }
+        }
+    }
+    if (inverse) {
+        int scale = power(n, modulus - 2);
+        for (int& value : values) value = (ll)value * scale % modulus;
+    }
+}
+vector<int> convolution(vector<int> a, vector<int> b) {
+    if (a.empty() || b.empty()) return {};
+    assert(a.size() + b.size() - 1 <= (1 << 23));
+    int size = a.size() + b.size() - 1, n = 1;
+    while (n < size) n <<= 1;
+    a.resize(n); b.resize(n);
+    ntt(a, false); ntt(b, false);
+    for (int i = 0; i < n; ++i) a[i] = (ll)a[i] * b[i] % 998244353;
+    ntt(a, true); a.resize(size);
+    return a;
+}
+\end{lstlisting}
+% Прямое и обратное преобразования и свёртка за $O(N\log N)$, память $O(N)$.
+% Длина преобразования --- степень двойки $1\le N\le2^{23}$;
+% коэффициенты в $[0,998244353)$. Для свёртки $|a|+|b|-1\le2^{23}$.
+% Пустой множитель даёт пустой результат. Произведения меньше $10^{18}$.
+% Самодостаточно; первообразный корень равен $3$.
+%
+% Результат --- остатки, а не целые коэффициенты. Для восстановления целой
+% свёртки нужны несколько модулей и CRT с достаточной границей произведения модулей.
+
+\iffalse
+\section{Преобразования XOR, AND, OR}
+Преобразует массивы для XOR-, AND- и OR-свёрток; после покоординатного умножения обратное преобразование даёт коэффициенты свёртки.
+Операция задаётся символом \texttt{'x'}, \texttt{'a'} или \texttt{'o'}, длина $N$ --- степень двойки от $1$ до $2^{29}$, коэффициенты лежат в $[0,m)$ при $2\le m\le10^9$.
+Для XOR модуль обязан быть нечётным; AND и OR допускают чётный составной модуль.
+Время $O(N\log N)$, дополнительная память преобразования $O(1)$; сами массивы должны помещаться в память.
+\begin{lstlisting}[name=extra_math_fwht]
+void fwht(vector<int>& values, char operation, bool inverse, int modulus) {
+    assert(modulus >= 2 && modulus <= 1000000000);
+    assert(operation == 'x' || operation == 'a' || operation == 'o');
+    assert(operation != 'x' || modulus % 2 == 1);
+    assert(!values.empty() && values.size() <= (1 << 29));
+    int n = values.size();
+    assert((n & (n - 1)) == 0);
+    for (int value : values) assert(value >= 0 && value < modulus);
+    for (int half = 1; half < n; half <<= 1)
+        for (int start = 0; start < n; start += 2 * half)
+            for (int j = 0; j < half; ++j) {
+                int& low = values[start + j];
+                int& high = values[start + j + half];
+                int a = low, b = high;
+                if (operation == 'x') {
+                    low = (a + b) % modulus;
+                    high = (a - b + modulus) % modulus;
+                    if (inverse) {
+                        low = (ll)low * ((modulus + 1) / 2) % modulus;
+                        high = (ll)high * ((modulus + 1) / 2) % modulus;
+                    }
+                } else if (operation == 'o') {
+                    high = (b + (inverse ? modulus - a : a)) % modulus;
+                } else {
+                    low = (a + (inverse ? modulus - b : b)) % modulus;
+                }
+            }
+}
+vector<int> bitwiseConvolution(vector<int> a, vector<int> b, char operation,
+                               int modulus) {
+    assert(a.size() == b.size());
+    fwht(a, operation, false, modulus); fwht(b, operation, false, modulus);
+    for (int i = 0; i < (int)a.size(); ++i) a[i] = (ll)a[i] * b[i] % modulus;
+    fwht(a, operation, true, modulus);
+    return a;
+}
+\end{lstlisting}
+\fi
+
+% FWHT и дзета/Мёбиус-преобразования для битовых свёрток.
+% $N$ --- степень двойки, $1\le N\le2^{29}$, память должна позволять хранение;
+% $2\le m\le10^9$, коэффициенты в $[0,m)$. XOR требует нечётный $m$;
+% AND и OR работают и при составном чётном модуле. Время $O(N\log N)$,
+% дополнительная память преобразования $O(1)$.
+% Самодостаточно. Операция --- символ \texttt{'x'}, \texttt{'a'}, \texttt{'o'}.
+%
+% После преобразования свёртка становится покоординатным произведением:
+% $c_k=\sum_{i\circ j=k}a_i b_j$. Для XOR обратное преобразование
+% делит на $N$; здесь деление на $2$ распределено по слоям.
+
+\iffalse
+\section{Обратный формальный степенной ряд}
+\subsection*{Для чего нужен}
+Находит $b$ с $ab\equiv1\pmod{x^n}$ над модулем $998244353$.
+$0\le n\le2^{22}$, коэффициенты нормализованы; при $n>0$ нужен $a_0\ne0$.
+Время $O(n\log(n+1))$, память $O(n)$; при $n=0$ возвращается пустой ряд.
+\subsection*{Реализация}
+Зависимости: \texttt{extra\_math\_ntt} и \texttt{extra\_math\_binomial}
+(только \texttt{primePower}). Верхняя граница учитывает полную свёртку на последнем шаге.
+\begin{lstlisting}[name=extra_math_poly_inverse]
+vector<int> polynomialInverse(const vector<int>& a, int n) {
+    assert(n >= 0 && n <= (1 << 22));
+    if (n == 0) return {};
+    assert(!a.empty() && a[0] != 0);
+    for (int value : a) assert(value >= 0 && value < 998244353);
+    vector<int> result{primePower(a[0], 998244351, 998244353)};
+    while ((int)result.size() < n) {
+        int size = min(n, 2 * (int)result.size());
+        vector<int> prefix(a.begin(), a.begin() + min((ll)a.size(), (ll)size));
+        prefix.resize(size);
+        auto correction = convolution(prefix, result);
+        correction.resize(size);
+        for (int& value : correction) value = (998244353 - value) % 998244353;
+        correction[0] = (correction[0] + 2) % 998244353;
+        result = convolution(result, correction);
+        result.resize(size);
+    }
+    return result;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Итерация Ньютона: $b\gets b(2-ab)\pmod{x^{2k}}$ удваивает точность.
+Через обратный ряд реализуются деление полиномов, логарифм и экспонента рядов.
+
+
+\fi
+\iffalse
+\section{Берлекэмп--Мэсси и член рекуррентной последовательности}
+\subsection*{Для чего нужен}
+Находит минимальную рекуррентность префикса:
+$s_n=\sum_{j=0}^{d-1}c_j s_{n-1-j}$ за $O(L^2)$ времени, $O(L)$ памяти.
+Вычисляет $s_k$ за $O(d^2\log(k+1))$, $O(d)$ памяти.
+Простой $2\le p\le10^9$, нормализованные коэффициенты,
+$0\le k\le\texttt{LLONG\_MAX}$. Для гарантированного восстановления
+истинной рекуррентности порядка $d$ нужны хотя бы $2d$ членов и предположение,
+что она действует и дальше. Нулевой порядок означает нулевую последовательность.
+\subsection*{Реализация}
+Зависимость: \texttt{extra\_math\_binomial}, только \texttt{primePower}.
+\begin{lstlisting}[name=extra_math_recurrence]
+vector<int> berlekampMassey(const vector<int>& sequence, int prime) {
+    assert(prime >= 2 && prime <= 1000000000 && sequence.size() < INT_MAX / 2);
+    for (int value : sequence) assert(value >= 0 && value < prime);
+    vector<int> current{1}, previous{1};
+    int length = 0, shift = 1, last = 1;
+    for (int n = 0; n < (int)sequence.size(); ++n) {
+        ll discrepancy = sequence[n];
+        for (int i = 1; i <= length; ++i)
+            discrepancy = (discrepancy + (ll)current[i] * sequence[n - i]) % prime;
+        if (!discrepancy) { ++shift; continue; }
+        int scale = discrepancy * primePower(last, prime - 2, prime) % prime;
+        auto saved = current;
+        if (current.size() < previous.size() + shift)
+            current.resize(previous.size() + shift);
+        for (int i = 0; i < (int)previous.size(); ++i)
+            current[i + shift] = (current[i + shift] - (ll)scale * previous[i] % prime + prime) % prime;
+        if (2 * length <= n) {
+            length = n + 1 - length;
+            previous = saved; last = discrepancy; shift = 1;
+        } else ++shift;
+    }
+    current.resize(length + 1);
+    current.erase(current.begin());
+    for (int& value : current) value = (prime - value) % prime;
+    return current;
+}
+int recurrenceKth(const vector<int>& initial, const vector<int>& coefficients,
+                  ll k, int prime) {
+    assert(k >= 0 && prime >= 2 && prime <= 1000000000);
+    assert(coefficients.size() < INT_MAX / 2);
+    int d = coefficients.size();
+    assert(initial.size() >= coefficients.size());
+    for (int value : initial) assert(value >= 0 && value < prime);
+    for (int value : coefficients) assert(value >= 0 && value < prime);
+    if (k < (ll)initial.size()) return initial[k];
+    if (d == 0) return 0;
+    auto combine = [&](const vector<int>& a, const vector<int>& b) {
+        vector<int> product(2 * d - 1);
+        for (int i = 0; i < d; ++i)
+            for (int j = 0; j < d; ++j)
+                product[i + j] = (product[i + j] + (ll)a[i] * b[j]) % prime;
+        for (int i = 2 * d - 2; i >= d; --i)
+            for (int j = 0; j < d; ++j)
+                product[i - 1 - j] = (product[i - 1 - j] + (ll)product[i] * coefficients[j]) % prime;
+        product.resize(d);
+        return product;
+    };
+    vector<int> result(d), power(d);
+    result[0] = 1;
+    if (d == 1) power[0] = coefficients[0]; else power[1] = 1;
+    while (k) {
+        if (k & 1) result = combine(result, power);
+        power = combine(power, power); k >>= 1;
+    }
+    ll answer = 0;
+    for (int i = 0; i < d; ++i) answer = (answer + (ll)result[i] * initial[i]) % prime;
+    return answer;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вычисление члена использует $x^k$ по модулю
+$x^d-c_0x^{d-1}-\cdots-c_{d-1}$.
+Для больших порядков ускоряют полиномиальное умножение и редукцию.
+
+
+\fi
+\section{Гаусс над простым полем}
+Решает систему из $n$ уравнений с $m$ неизвестными по расширенной матрице из $m+1$ столбцов и возвращает статус и вектор решения.
+Статус $0$ означает несовместность, $1$ --- единственное решение, $2$ --- несколько решений со свободными переменными, выбранными равными нулю.
+Нужны простой $2\le p\le10^9$, нормализованные остатки и \texttt{primePower} из \texttt{extra\_math\_binomial}; размеры меньше \texttt{INT\_MAX}, нулевые допустимы, $m$ задаётся явно.
+Время $O(nm\min(n,m)+\min(n,m)\log p+nm)$, память $O(n(m+1)+m)$.
+\begin{lstlisting}[name=extra_math_gauss_prime]
+pair<int, vector<int>> gaussPrime(vector<vector<int>> matrix, int variables,
+                                 int prime) {
+    assert(variables >= 0 && variables < INT_MAX && matrix.size() < INT_MAX);
+    assert(prime >= 2 && prime <= 1000000000);
+    for (const auto& row : matrix) {
+        assert(row.size() == (ll)variables + 1);
+        for (int value : row) assert(value >= 0 && value < prime);
+    }
+    int rows = matrix.size(), rank = 0;
+    vector<int> pivot(variables, -1);
+    for (int column = 0; column < variables && rank < rows; ++column) {
+        int selected = rank;
+        while (selected < rows && matrix[selected][column] == 0) ++selected;
+        if (selected == rows) continue;
+        swap(matrix[selected], matrix[rank]);
+        int inverse = primePower(matrix[rank][column], prime - 2, prime);
+        for (int j = column; j <= variables; ++j)
+            matrix[rank][j] = (ll)matrix[rank][j] * inverse % prime;
+        for (int i = 0; i < rows; ++i) if (i != rank) {
+            int scale = matrix[i][column];
+            for (int j = column; j <= variables; ++j)
+                matrix[i][j] = (matrix[i][j] - (ll)scale * matrix[rank][j] % prime + prime) % prime;
+        }
+        pivot[column] = rank++;
+    }
+    for (int i = rank; i < rows; ++i) if (matrix[i][variables]) return {0, {}};
+    vector<int> solution(variables);
+    for (int j = 0; j < variables; ++j)
+        if (pivot[j] != -1) solution[j] = matrix[pivot[j]][variables];
+    return {rank == variables ? 1 : 2, solution};
+}
+\end{lstlisting}
+% Для расширенной матрицы из $n$ строк по $m+1$ элементов возвращает
+% $(status,x)$: $0$ --- несовместна, $1$ --- единственное решение,
+% $2$ --- несколько; свободные переменные обнулены.
+% Простой $2\le p\le10^9$, остатки нормализованы; размеры меньше
+% $\texttt{INT\_MAX}$. Допустимы нулевые размеры, $m$ задаётся явно.
+% Время $O(nm\min(n,m)+\min(n,m)\log p+nm)$, память $O(n(m+1)+m)$.
+% Зависимость: \texttt{extra\_math\_binomial}, только \texttt{primePower}.
+%
+% В отличие от вещественного Гаусса здесь не нужен epsilon.
+% Для составного модуля ненулевой ведущий элемент может быть необратим.
+
+\iffalse
+\section{Гаусс над GF(2)}
+Решает бинарную линейную систему и возвращает статус и вектор нулей и единиц: $0$ --- решения нет, $1$ --- единственное, $2$ --- несколько со свободными переменными, выбранными равными нулю.
+При $0\le m\le62$ каждая строка задаётся неотрицательным \texttt{ll}: биты $[0,m)$ --- коэффициенты, бит $m$ --- правая часть, старшие биты нулевые.
+Время $O(nm)$, память $O(n+m)$.
+\begin{lstlisting}[name=extra_math_gauss_gf2]
+pair<int, vector<int>> gaussGF2(vector<ll> matrix, int variables) {
+    assert(variables >= 0 && variables <= 62 && matrix.size() < INT_MAX);
+    for (ll row : matrix) assert(row >= 0 && (row >> variables) <= 1);
+    vector<int> pivot(variables, -1);
+    int rank = 0, rows = matrix.size();
+    for (int column = 0; column < variables && rank < rows; ++column) {
+        int selected = rank;
+        while (selected < rows && !(matrix[selected] >> column & 1)) ++selected;
+        if (selected == rows) continue;
+        swap(matrix[rank], matrix[selected]);
+        for (int i = 0; i < rows; ++i)
+            if (i != rank && (matrix[i] >> column & 1)) matrix[i] ^= matrix[rank];
+        pivot[column] = rank++;
+    }
+    for (int i = rank; i < rows; ++i) if (matrix[i] >> variables & 1) return {0, {}};
+    vector<int> solution(variables);
+    for (int j = 0; j < variables; ++j)
+        if (pivot[j] != -1) solution[j] = matrix[pivot[j]] >> variables & 1;
+    return {rank == variables ? 1 : 2, solution};
+}
+\end{lstlisting}
+\fi
+
+% Те же статусы для бинарной системы, $0\le m\le62$.
+% Строка кодируется неотрицательным \texttt{ll}: биты $[0,m)$ --- коэффициенты,
+% бит $m$ --- правая часть; старшие биты нулевые. Время $O(nm)$,
+% память $O(n+m)$; операции над строкой занимают $O(1)$.
+% Самодостаточный листинг, возвращает решение как вектор нулей и единиц.
+%
+% Для больших $m$ используйте массивы машинных слов или bitset;
+% число решений совместной системы равно $2^{m-rank}$ и может не помещаться в \texttt{ll}.
+
+\iffalse
+\section{XOR-базис}
+Поддерживает вставку неотрицательных \texttt{ll}, проверку представимости их XOR-комбинацией и максимизацию XOR с начальным $x\ge0$.
+Передайте первоначально нулевой вектор из $63$ элементов и изменяйте его только этими вставками; вставка возвращает, увеличился ли ранг.
+Каждая операция занимает $O(63)$ времени, память $O(63)$.
+\begin{lstlisting}[name=extra_math_basis]
+bool xorInsert(vector<ll>& basis, ll value) {
+    assert(basis.size() == 63 && value >= 0);
+    for (int bit = 62; bit >= 0; --bit) if (value >> bit & 1) {
+        if (!basis[bit]) { basis[bit] = value; return true; }
+        value ^= basis[bit];
+    }
+    return false;
+}
+bool xorContains(const vector<ll>& basis, ll value) {
+    assert(basis.size() == 63 && value >= 0);
+    for (int bit = 62; bit >= 0; --bit)
+        if (value >> bit & 1) value ^= basis[bit];
+    return value == 0;
+}
+ll xorMaximum(const vector<ll>& basis, ll value = 0) {
+    assert(basis.size() == 63 && value >= 0);
+    for (int bit = 62; bit >= 0; --bit) value = max(value, value ^ basis[bit]);
+    return value;
+}
+\end{lstlisting}
+\fi
+
+% Вставляет неотрицательные \texttt{ll}, проверяет представимость и максимизирует
+% XOR с начальным $x\ge0$. Базис --- вектор длины $63$, первоначально нулевой;
+% ячейка $i$ либо нулевая, либо имеет старший бит $i$.
+% Каждая операция $O(63)$, память $O(63)$; вставка возвращает независимость.
+% Самодостаточно; передавайте только базис, построенный этими вставками.
+%
+% Ранг равен числу ненулевых ячеек; число представимых значений $2^{rank}$.
+% Для $k$-го значения по возрастанию нужен приведённый базис и аккуратная
+% обработка случая ранга $63$.
+
+\section{Определитель над простым полем}
+Возвращает определитель квадратной матрицы по простому модулю $2\le p\le10^9$; определитель пустой матрицы равен $1$.
+Коэффициенты должны быть нормализованы, $n<\texttt{INT\_MAX}$; нужна \texttt{primePower} из \texttt{extra\_math\_binomial}.
+Время $O(n^3+n\log p)$, память $O(n^2)$ с копией матрицы; результат не является точным целочисленным определителем.
+\begin{lstlisting}[name=extra_math_determinant]
+int determinant(vector<vector<int>> matrix, int prime) {
+    assert(prime >= 2 && prime <= 1000000000 && matrix.size() < INT_MAX);
+    int n = matrix.size(), result = 1;
+    for (const auto& row : matrix) {
+        assert(row.size() == matrix.size());
+        for (int value : row) assert(value >= 0 && value < prime);
+    }
+    for (int column = 0; column < n; ++column) {
+        int selected = column;
+        while (selected < n && !matrix[selected][column]) ++selected;
+        if (selected == n) return 0;
+        if (selected != column) {
+            swap(matrix[selected], matrix[column]); result = (prime - result) % prime;
+        }
+        result = (ll)result * matrix[column][column] % prime;
+        int inverse = primePower(matrix[column][column], prime - 2, prime);
+        for (int i = column + 1; i < n; ++i) {
+            int scale = (ll)matrix[i][column] * inverse % prime;
+            for (int j = column; j < n; ++j)
+                matrix[i][j] = (matrix[i][j] - (ll)scale * matrix[column][j] % prime + prime) % prime;
+        }
+    }
+    return result;
+}
+\end{lstlisting}
+% Вычисляет определитель квадратной матрицы по простому $2\le p\le10^9$.
+% Коэффициенты нормализованы; $n<\texttt{INT\_MAX}$. Время $O(n^3+n\log p)$,
+% память $O(n^2)$ с копией. Определитель пустой матрицы равен $1$.
+% Зависимость: \texttt{extra\_math\_binomial}, только \texttt{primePower}.
+%
+% Перестановка строк меняет знак. Это не целочисленный определитель;
+% для точного целого ответа используют алгоритм Барейса или CRT с границей Адамара.
+
+\iffalse
+\section{Обратная матрица над простым полем}
+\subsection*{Для чего нужен}
+Для квадратной нормализованной матрицы и простого $2\le p\le10^9$
+возвращает обратную либо пустой \texttt{optional}, если матрица вырождена.
+$n<\texttt{INT\_MAX}/2$, время $O(n^3+n\log p)$, память $O(n^2)$.
+Пустая матрица обратима, её обратная пуста.
+\subsection*{Реализация}
+Зависимость: \texttt{extra\_math\_binomial}, только \texttt{primePower}.
+\begin{lstlisting}[name=extra_math_matrix_inverse]
+optional<vector<vector<int>>> matrixInverse(vector<vector<int>> matrix, int prime) {
+    assert(prime >= 2 && prime <= 1000000000 && matrix.size() < INT_MAX / 2);
+    int n = matrix.size();
+    vector<vector<int>> result(n, vector<int>(n));
+    for (int i = 0; i < n; ++i) {
+        assert(matrix[i].size() == matrix.size());
+        for (int value : matrix[i]) assert(value >= 0 && value < prime);
+        result[i][i] = 1;
+    }
+    for (int column = 0; column < n; ++column) {
+        int selected = column;
+        while (selected < n && !matrix[selected][column]) ++selected;
+        if (selected == n) return nullopt;
+        swap(matrix[selected], matrix[column]); swap(result[selected], result[column]);
+        int inverse = primePower(matrix[column][column], prime - 2, prime);
+        for (int j = 0; j < n; ++j) {
+            matrix[column][j] = (ll)matrix[column][j] * inverse % prime;
+            result[column][j] = (ll)result[column][j] * inverse % prime;
+        }
+        for (int i = 0; i < n; ++i) if (i != column) {
+            int scale = matrix[i][column];
+            for (int j = 0; j < n; ++j) {
+                matrix[i][j] = (matrix[i][j] - (ll)scale * matrix[column][j] % prime + prime) % prime;
+                result[i][j] = (result[i][j] - (ll)scale * result[column][j] % prime + prime) % prime;
+            }
+        }
+    }
+    return result;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Для решения одной системы дешевле применять Гаусса напрямую, не строя обратную.
+Над вещественными числами необходимы выбор главного элемента и анализ погрешности.
+
+
+\fi
+\section{Умножение и степень матрицы}
+Перемножает квадратные матрицы одинакового размера и возводит матрицу в степень $0\le e\le\texttt{LLONG\_MAX}$ по модулю $m$.
+Нужны $1\le m\le2\cdot10^9$, коэффициенты в $[0,m)$ и $n<\texttt{INT\_MAX}$; нулевая степень даёт единичную матрицу по этому модулю, включая $m=1$.
+Для степени время $O(n^3\log(e+1)+n^2)$, память $O(n^2)$.
+\begin{lstlisting}[name=extra_math_matrix_power]
+vector<vector<int>> matrixMultiply(const vector<vector<int>>& a,
+                                   const vector<vector<int>>& b, int modulus) {
+    assert(modulus >= 1 && modulus <= 2000000000 && a.size() < INT_MAX);
+    assert(a.size() == b.size());
+    int n = a.size();
+    for (int i = 0; i < n; ++i) {
+        assert(a[i].size() == a.size() && b[i].size() == a.size());
+        for (int value : a[i]) assert(value >= 0 && value < modulus);
+        for (int value : b[i]) assert(value >= 0 && value < modulus);
+    }
+    vector<vector<int>> result(n, vector<int>(n));
+    for (int i = 0; i < n; ++i)
+        for (int k = 0; k < n; ++k)
+            for (int j = 0; j < n; ++j)
+                result[i][j] = (result[i][j] + (ll)a[i][k] * b[k][j]) % modulus;
+    return result;
+}
+vector<vector<int>> matrixPower(vector<vector<int>> matrix, ll exponent, int modulus) {
+    assert(exponent >= 0 && modulus >= 1 && modulus <= 2000000000);
+    assert(matrix.size() < INT_MAX);
+    int n = matrix.size();
+    vector<vector<int>> result(n, vector<int>(n));
+    for (int i = 0; i < n; ++i) {
+        assert(matrix[i].size() == matrix.size());
+        for (int value : matrix[i]) assert(value >= 0 && value < modulus);
+        result[i][i] = 1 % modulus;
+    }
+    while (exponent) {
+        if (exponent & 1) result = matrixMultiply(result, matrix, modulus);
+        matrix = matrixMultiply(matrix, matrix, modulus); exponent >>= 1;
+    }
+    return result;
+}
+\end{lstlisting}
+% Перемножает квадратные матрицы одинакового размера и возводит в степень
+% $0\le e\le\texttt{LLONG\_MAX}$ по любому $1\le m\le2\cdot10^9$.
+% Коэффициенты в $[0,m)$, $n<\texttt{INT\_MAX}$.
+% Время $O(n^3\log(e+1)+n^2)$, память $O(n^2)$.
+% Нулевая степень --- единичная матрица по модулю $m$, включая $m=1$.
+% Самодостаточно; остаток берётся после каждого слагаемого, а не после всей суммы.
+%
+% Для линейной рекуррентности большого порядка полиномиальная редукция быстрее
+% матричной степени. Для разреженных переходов полезно отдельное разреженное умножение.
+
+\iffalse
+\section{Короткие комбинаторные и арифметические формулы}
+Точные тождества для подсчёта и преобразования сумм. Если вычисления идут
+в \texttt{ll}, каждый результат и промежуточное произведение должны помещаться;
+деление в целых формулах не заменяют обратным элементом без проверки обратимости.
+Включения--исключения:
+$|\bigcup_{i=1}^n A_i|=\sum_{\varnothing\ne S\subseteq[1,n]}
+(-1)^{|S|+1}|\bigcap_{i\in S}A_i|$.
+Обращение Мёбиуса: $F(n)=\sum_{d\mid n}f(d)$ тогда и только тогда, когда
+$f(n)=\sum_{d\mid n}\mu(d)F(n/d)$;
+$\sum_{d\mid n}\mu(d)=[n=1]$, $\sum_{d\mid n}\varphi(d)=n$.
+Каталан: $C_n=\binom{2n}{n}/(n+1)=\binom{2n}{n}-\binom{2n}{n+1}$,
+$C_0=1$, $C_{n+1}=\sum_{i=0}^n C_i C_{n-i}$.
+Стирлинг второго рода:
+$S(n,k)=S(n-1,k-1)+kS(n-1,k)$;
+первого рода без знака:
+$c(n,k)=c(n-1,k-1)+(n-1)c(n-1,k)$.
+Обе таблицы имеют $(0,0)=1$, остальные значения на осях нулевые.
+Белл: $B_n=\sum_{k=0}^n S(n,k)$,
+$B_0=1$, $B_{n+1}=\sum_{k=0}^n\binom nk B_k$.
+Эйлер: $a^{\varphi(m)}\equiv1\pmod m$ при $m\ge2$, $\gcd(a,m)=1$.
+Ферма: $a^{p-1}\equiv1\pmod p$ при простом $p$, $p\nmid a$.
+Вильсон: $(p-1)!\equiv-1\pmod p$ тогда и только тогда, когда $p>1$ простое.
+Суммы при $n\ge0$:
+$\sum_{i=1}^n i=n(n+1)/2$,
+$\sum_{i=1}^n i^2=n(n+1)(2n+1)/6$,
+$\sum_{i=1}^n i^3=(n(n+1)/2)^2$;
+$\sum_{i=0}^{n-1}r^i=(r^n-1)/(r-1)$ при $r\ne1$, иначе $n$.
+Кирхгоф: число остовных деревьев неориентированного мультиграфа без петель
+равно любому главному кофактору $L=D-A$, где кратности рёбер учтены в $D,A$.
+Для одной вершины кофактор пуст и равен $1$; для несвязного графа с $n>1$ --- $0$.
+% Модульная версия Кирхгофа использует листинг определителя и даёт ответ по
+% простому модулю. В формулах сумм сначала сокращайте целые множители;
+% по модулю $2$ или $3$ делители $2$, $6$ необратимы.
+
+
+\fi

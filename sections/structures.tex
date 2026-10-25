@@ -1,0 +1,150 @@
+\section{Система непересекающихся множеств (DSU)}
+Поддерживает объединение компонент и проверку принадлежности одной компоненте; объединение возвращает признак изменения разбиения.
+Вход --- векторы \texttt{parent} и \texttt{size} размера $n$, исходно $parent[i]=i$, $size[i]=1$, вершины $0\ldots n-1$; требуется $0\le n<\texttt{INT\_MAX}$ и корректные индексы вершин.
+Поиск корня и объединение занимают амортизированно $O(\alpha(n))$ времени, память $O(n)$.
+\begin{lstlisting}[name=data_dsu]
+int find_root(vector<int>& parent, int vertex) {
+    if (parent[vertex] == vertex) return vertex;
+    return parent[vertex] = find_root(parent, parent[vertex]);
+}
+
+bool unite(vector<int>& parent, vector<int>& size, int first, int second) {
+    first = find_root(parent, first);
+    second = find_root(parent, second);
+    if (first == second) return false;
+    if (size[first] < size[second]) swap(first, second);
+    parent[second] = first;
+    size[first] += size[second];
+    return true;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Поддерживает объединение компонент и проверку принадлежности одной компоненте.
+% Вершины нумеруются от $0$ до $n-1$, векторы \texttt{parent} и \texttt{size}
+% имеют размер $n$; исходно $parent[i]=i$, $size[i]=1$.
+% Требуется $0\le n<\texttt{INT\_MAX}$.
+% Амортизированное время поиска корня и объединения ---
+% $O(\alpha(n))$, память $O(n)$. Объединение возвращает признак
+% изменения разбиения.
+% Код адаптирован из \url{https://ru.algorithmica.org/cs/set-structures/dsu/}:
+% массивы передаются параметрами, добавлены проверка совпадения корней
+% и возвращаемый признак объединения.
+% \subsection*{Реализация}
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Сжатие путей и объединение по размеру дают почти константную амортизацию.
+% Можно хранить дополнительные данные компоненты в корне и объединять их при
+% смене корня. Для отката операций применяют DSU с историей изменений без
+% сжатия путей. Для офлайн-задач полезен DSU на отрезке времени.
+
+\section{Дерево Фенвика}
+Поддерживает прибавление к позиции и суммы на полуинтервалах: префикс относится к $[0,right)$, запрос суммы --- к $[left,right)$.
+Вход --- изначально нулевой вектор \texttt{tree} размера $n+1$; требуется $0\le n<\texttt{INT\_MAX}$, $0\le left\le right\le n$, при обновлении $0\le index<n$.
+Суммы и промежуточные значения должны помещаться в \texttt{ll}; каждая операция занимает $O(\log(n+1))$ времени и $O(1)$ дополнительной памяти.
+\begin{lstlisting}[name=data_fenwick]
+void add(vector<ll>& tree, int index, ll delta) {
+    int length = (int)tree.size() - 1;
+    for (++index; index <= length;) {
+        tree[index] += delta;
+        int step = index & -index;
+        if (step > length - index) break;
+        index += step;
+    }
+}
+
+ll prefix(const vector<ll>& tree, int right) {
+    ll answer = 0;
+    for (; right > 0; right -= right & -right) answer += tree[right];
+    return answer;
+}
+
+ll range(const vector<ll>& tree, int left, int right) {
+    return prefix(tree, right) - prefix(tree, left);
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Поддерживает прибавление к одной позиции и суммы на полуинтервалах.
+% Внешний вектор \texttt{tree} имеет размер $n+1$ и изначально заполнен нулями;
+% индексы элементов --- $0\ldots n-1$. Префиксная сумма относится
+% к $[0,right)$, сумма отрезка --- к $[left,right)$.
+% Требуется $0\le left\le right\le n$, для обновления $0\le index<n$;
+% $n<\texttt{INT\_MAX}$. Суммы и промежуточные значения помещаются в \texttt{ll}.
+% Каждая операция занимает $O(\log(n+1))$ времени и $O(1)$ дополнительной памяти.
+% Код адаптирован из \url{https://ru.algorithmica.org/cs/range-queries/fenwick/}:
+% внешний массив передаётся параметром, индексы элементов начинаются с нуля,
+% границы полуоткрытые, суммы имеют тип \texttt{ll}.
+% \subsection*{Реализация}
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Для значения в одной позиции и прибавления на отрезке достаточно одного
+% дерева Фенвика над разностями. Два дерева позволяют получать суммы при
+% прибавлении на отрезке. Для минимума возможны специальные варианты только при ограниченных
+% обновлениях; для произвольных изменений удобнее дерево отрезков.
+
+\section{Дерево отрезков с отложенным прибавлением}
+Обрабатывает массив значений и запросы $(left,right,value,type)$: тип $0$ прибавляет \texttt{value} на $[left,right)$, тип $1$ возвращает сумму, игнорируя поле значения; ответ содержит суммы в порядке запросов.
+Требуется $0\le n<\texttt{INT\_MAX}/4$, $0\le left\le right\le n$; пустые массивы и полуинтервалы допустимы, суммы, метки и промежуточные произведения должны помещаться в \texttt{ll}.
+Построение занимает $O(n)$, запрос --- $O(\log(n+1))$, общая память $O(n+q)$.
+\begin{lstlisting}[name=data_segment]
+vector<ll> segmentTree(const vector<ll>& values,
+        const vector<tuple<int, int, ll, int>>& queries) {
+    int n = values.size();
+    vector<ll> tree(4 * max(1, n)), lazy(tree.size()), answer;
+    auto build = [&](auto&& self, int node, int left, int right) -> void {
+        if (right - left == 1) { tree[node] = values[left]; return; }
+        int middle = (left + right) / 2;
+        self(self, node * 2, left, middle);
+        self(self, node * 2 + 1, middle, right);
+        tree[node] = tree[node * 2] + tree[node * 2 + 1];
+    };
+    auto update = [&](auto&& self, int node, int left, int right,
+                      int queryLeft, int queryRight, ll value) -> void {
+        if (queryRight <= left || right <= queryLeft) return;
+        if (queryLeft <= left && right <= queryRight) {
+            tree[node] += value * (right - left); lazy[node] += value; return;
+        }
+        int middle = (left + right) / 2;
+        self(self, node * 2, left, middle, queryLeft, queryRight, value);
+        self(self, node * 2 + 1, middle, right, queryLeft, queryRight, value);
+        tree[node] = tree[node * 2] + tree[node * 2 + 1]
+                   + lazy[node] * (right - left);
+    };
+    auto query = [&](auto&& self, int node, int left, int right,
+                     int queryLeft, int queryRight, ll carry) -> ll {
+        if (queryRight <= left || right <= queryLeft) return 0;
+        if (queryLeft <= left && right <= queryRight)
+            return tree[node] + carry * (right - left);
+        int middle = (left + right) / 2;
+        carry += lazy[node];
+        return self(self, node * 2, left, middle, queryLeft, queryRight, carry)
+             + self(self, node * 2 + 1, middle, right, queryLeft, queryRight, carry);
+    };
+    if (n) build(build, 1, 0, n);
+    for (auto [left, right, value, type] : queries)
+        if (type == 0) { if (n) update(update, 1, 0, n, left, right, value); }
+        else answer.push_back(n ? query(query, 1, 0, n, left, right, 0) : 0);
+    return answer;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Пакетно обрабатывает прибавления на полуинтервале и запросы суммы.
+% Запрос хранит левую и правую границы, значение и тип в этом порядке:
+% при типе $0$ значение прибавляется на $[left,right)$, при типе $1$
+% вычисляется сумма, а поле значения игнорируется. Ответ содержит суммы
+% в порядке запросов. Требуется $0\le left\le right\le n$;
+% пустые массивы и полуинтервалы допустимы.
+% Построение занимает $O(n)$, запрос --- $O(\log(n+1))$,
+% общая память $O(n+q)$. Требуется $n<\texttt{INT\_MAX}/4$;
+% суммы, метки и промежуточные произведения помещаются в \texttt{ll}.
+% Тематический источник: \url{https://ru.algorithmica.org/cs/segment-tree/lazy-propagation/}.
+% Код ниже самостоятельный: в статье используется присваивание на отрезке
+% и дерево на указателях, здесь --- прибавление и массивы без проталкивания.
+% \subsection*{Реализация}
+%
+% \subsection*{Возможные улучшения и дополнения}
+% При необходимости можно вернуть минимум или максимум, заменив агрегат и
+% формулу применения отложенного значения. Для онлайн-запросов вынесите
+% построение и операции в функции с внешними \texttt{tree} и \texttt{lazy}.
+% Комбинацию прибавления и присваивания нужно хранить двумя видами меток и
+% применять их в правильном порядке.
+

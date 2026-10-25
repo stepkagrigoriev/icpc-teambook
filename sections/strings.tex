@@ -1,0 +1,238 @@
+\section{Префикс-функция}
+Для поиска подстрок и анализа периодичности возвращает массив $\pi$: на позиции $i$ --- длина наибольшего собственного префикса строки $s[0\ldots i]$, совпадающего с её суффиксом; $\pi[0]=0$.
+Вход --- строка из любых байтов, включая пустую, длины $n<\texttt{INT\_MAX}$; индексы с нуля, символы Юникода отдельно не декодируются.
+Время $O(n)$, память $O(n)$.
+\begin{lstlisting}[name=str_prefix]
+vector<int> prefixFunction(const string& text) {
+    int length = text.size();
+    vector<int> prefix(length);
+    for (int index = 1; index < length; ++index) {
+        int matched = prefix[index - 1];
+        while (matched > 0 && text[index] != text[matched])
+            matched = prefix[matched - 1];
+        if (text[index] == text[matched]) ++matched;
+        prefix[index] = matched;
+    }
+    return prefix;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Для каждой позиции $i$ находит длину наибольшего собственного префикса
+% строки $s[0\ldots i]$, совпадающего с её суффиксом. В частности,
+% $\pi[0]=0$. Нужна для поиска подстроки и анализа периодичности.
+% Время $O(n)$, память $O(n)$, где $n$ --- длина строки в байтах.
+% Допустимы пустая строка и любые байты; $n<\texttt{INT\_MAX}$.
+% Индексы начинаются с нуля; символы Юникода отдельно не декодируются.
+% Код адаптирован из \url{https://ru.algorithmica.org/cs/string-searching/prefix-function/}:
+% переименованы переменные, строка передаётся по константной ссылке.
+% \subsection*{Реализация}
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Для непустого шаблона $p$ вычислите функцию на $p+\#+t$, где разделитель
+% не встречается во входе. Значение $|p|$ на позиции $i$ означает вхождение
+% в тексте с началом $i-2|p|$. Если свободного байта нет, используйте
+% целочисленный алфавит с отдельным разделителем либо потоковый алгоритм
+% Кнута--Морриса--Пратта, хранящий только префикс-функцию шаблона.
+% Для непустой строки кандидат на период $k=n-\pi[n-1]$;
+% строка состоит из целых повторов блока длины $k$, если $n\bmod k=0$.
+% Все границы строки перечисляются переходами $k\gets\pi[k-1]$.
+
+\section{Z-функция}
+Для поиска подстрок, границ и периодов возвращает массив $z$: на позиции $i$ --- длина наибольшего общего префикса всей строки и суффикса с позиции $i$; принято $z[0]=0$.
+Вход --- строка из любых байтов, включая пустую, длины $n<\texttt{INT\_MAX}$; индексы с нуля, сравниваются байты без декодирования Юникода.
+Время $O(n)$, память $O(n)$.
+\begin{lstlisting}[name=str_z]
+vector<int> zFunction(const string& text) {
+    int length = text.size();
+    vector<int> z(length);
+    int left = 0, right = 0;
+    for (int index = 1; index < length; ++index) {
+        if (index <= right)
+            z[index] = min(right - index + 1, z[index - left]);
+        while (index + z[index] < length &&
+               text[z[index]] == text[index + z[index]])
+            ++z[index];
+        if (index + z[index] - 1 > right) {
+            left = index;
+            right = index + z[index] - 1;
+        }
+    }
+    return z;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужна}
+% $z[i]$ --- длина наибольшего общего префикса всей строки и её суффикса,
+% начинающегося в позиции $i$. Здесь принято $z[0]=0$.
+% Применяется для поиска подстрок, границ и периодов строки.
+% Время $O(n)$, память $O(n)$, где $n$ --- длина в байтах.
+% Допустимы пустая строка и любые байты; $n<\texttt{INT\_MAX}$.
+% Индексы с нуля; сравниваются байты, а не символы Юникода.
+% Код адаптирован из \url{https://ru.algorithmica.org/cs/string-searching/z-function/}:
+% переименованы переменные, строка передаётся по константной ссылке.
+% \subsection*{Реализация}
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Поддерживается отрезок $[left,right]$, совпадающий с префиксом.
+% Для поиска непустого $p$ в тексте $t$ используйте $p+\#+t$
+% с разделителем вне алфавита входа. При $i>|p|$ условие $z[i]=|p|$
+% даёт начало вхождения $i-|p|-1$. Для полного байтового алфавита
+% перейдите к целым числам с отдельным разделителем.
+% Условие $i+z[i]=n$ выделяет суффикс, равный префиксу.
+% Число $k$, $1\le k<n$, является периодом тогда и только тогда,
+% когда $k+z[k]=n$; для целых повторов дополнительно нужно $n\bmod k=0$.
+
+\section{Алгоритм Манакера: обе чётности}
+Находит радиусы всех максимальных палиндромов строки и возвращает массивы $(odd,even)$ за $O(n)$ времени и $O(n)$ памяти.
+Нечётный радиус $odd[i]$ включает центр $i$ и задаёт полуинтервал $[i-odd[i]+1,i+odd[i])$ длины $2odd[i]-1$; чётный $even[i]$ имеет центр между $i-1$ и $i$ и задаёт $[i-even[i],i+even[i])$ длины $2even[i]$.
+Вход --- любые байты, $n<\texttt{INT\_MAX}$, индексы с нуля, сравнение без декодирования Юникода; пустая строка даёт два пустых массива.
+\begin{lstlisting}[name=str_manacher]
+pair<vector<int>, vector<int>> manacher(const string& text) {
+    int length = text.size();
+    vector<int> odd(length), even(length);
+    int left = 0, right = -1;
+    for (int center = 0; center < length; ++center) {
+        int radius = 1;
+        if (center <= right)
+            radius = min(odd[left + (right - center)], right - center + 1);
+        while (center - radius >= 0 && center + radius < length &&
+               text[center - radius] == text[center + radius])
+            ++radius;
+        odd[center] = radius;
+        if (center + radius - 1 > right) {
+            left = center - radius + 1;
+            right = center + radius - 1;
+        }
+    }
+    left = 0;
+    right = -1;
+    for (int center = 0; center < length; ++center) {
+        int radius = 0;
+        if (center <= right)
+            radius = min(even[left + (right - center) + 1],
+                         right - center + 1);
+        while (center - radius - 1 >= 0 && center + radius < length &&
+               text[center - radius - 1] == text[center + radius])
+            ++radius;
+        even[center] = radius;
+        if (center + radius - 1 > right) {
+            left = center - radius;
+            right = center + radius - 1;
+        }
+    }
+    return {odd, even};
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Находит радиусы всех максимальных палиндромов за $O(n)$ времени
+% и $O(n)$ памяти.
+% Нечётный радиус $odd[i]$ включает центр $i$: палиндром занимает
+% $[i-odd[i]+1,i+odd[i])$ и имеет длину $2odd[i]-1$.
+% Чётный радиус $even[i]$ задаёт центр между $i-1$ и $i$:
+% палиндром занимает $[i-even[i],i+even[i])$, длина $2even[i]$.
+% Индексы с нуля; пустая строка даёт два пустых массива.
+% Любые байты допустимы, сравнение побайтовое, без декодирования Юникода;
+% $n<\texttt{INT\_MAX}$.
+% Код адаптирован из \url{https://ru.algorithmica.org/cs/string-searching/manacher/}:
+% обе чётности объединены в одну функцию, центр чётного палиндрома
+% перенесён на правый символ пары; границы проверяются явно.
+% \subsection*{Реализация}
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Максимум длин по двум массивам даёт самый длинный палиндром.
+% Сумма всех радиусов в типе \texttt{ll} равна числу непустых
+% палиндромных подстрок с учётом позиций, а не числу различных строк.
+% Проверка непустого полуинтервала $[l,r)$ за $O(1)$:
+% пусть $d=r-l$ и $c=l+\lfloor d/2\rfloor$.
+% При нечётном $d$ нужно $odd[c]\ge\lfloor d/2\rfloor+1$,
+% при чётном --- $even[c]\ge d/2$.
+% Для различных палиндромов и добавления символов онлайн подходит
+% палиндромное дерево.
+
+\section{Ахо--Корасик: число вхождений каждого шаблона}
+Считает вхождения набора шаблонов в текст, включая перекрытия, и возвращает \texttt{vector<ll>} в порядке шаблонов; дубликаты получают одинаковые ответы, пустой шаблон --- $n+1$, пустые текст и набор допустимы.
+Алфавит строго \texttt{a}--\texttt{z}, некорректный байт вызывает \texttt{invalid\_argument}; для суммы длин шаблонов $L$, их числа $k$ и длины текста $n$ требуется $L+1,k,n<\texttt{INT\_MAX}$.
+Автомат строится заново для каждого текста; при числе вершин бора $V\le L+1$ время $O(L+26V+n+k)$, дополнительная память $O(26V+k)$.
+\begin{lstlisting}[name=str_aho]
+vector<ll> ahoCounts(const vector<string>& patterns, const string& text) {
+    array<int, 26> empty;
+    empty.fill(-1);
+    vector<array<int, 26>> next(1, empty);
+    vector<int> fail(1);
+    vector<ll> count(1);
+    vector<int> terminal;
+    auto letterIndex = [](char letter) {
+        if (letter < 'a' || letter > 'z')
+            throw invalid_argument("Ожидается буква a-z");
+        return letter - 'a';
+    };
+    for (const string& pattern : patterns) {
+        int vertex = 0;
+        for (char letter : pattern) {
+            int symbol = letterIndex(letter);
+            if (next[vertex][symbol] == -1) {
+                int child = (int)next.size();
+                next.push_back(empty);
+                fail.push_back(0);
+                count.push_back(0);
+                next[vertex][symbol] = child;
+            }
+            vertex = next[vertex][symbol];
+        }
+        terminal.push_back(vertex);
+    }
+    vector<int> order = {0};
+    for (int index = 0; index < (int)order.size(); ++index) {
+        int vertex = order[index];
+        for (int symbol = 0; symbol < 26; ++symbol) {
+            int child = next[vertex][symbol];
+            int fallback = vertex == 0 ? 0 : next[fail[vertex]][symbol];
+            if (child == -1) {
+                next[vertex][symbol] = fallback;
+            } else {
+                fail[child] = fallback;
+                order.push_back(child);
+            }
+        }
+    }
+    int vertex = 0;
+    for (char letter : text) {
+        vertex = next[vertex][letterIndex(letter)];
+        ++count[vertex];
+    }
+    for (int index = (int)order.size() - 1; index > 0; --index) {
+        int current = order[index];
+        count[fail[current]] += count[current];
+    }
+    vector<ll> counts;
+    for (int endpoint : terminal)
+        counts.push_back(endpoint == 0 ? (ll)text.size() + 1 :
+                         count[endpoint]);
+    return counts;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Считает все вхождения набора шаблонов в один текст, включая перекрытия.
+%
+% Ответ типа \texttt{vector<ll>} идёт в порядке шаблонов;
+% дубликаты получают одинаковые ответы. Пустой шаблон встречается $n+1$
+% раз, пустые текст и набор шаблонов допустимы.
+% Алфавит строго \texttt{a}--\texttt{z}; некорректный байт вызывает
+% \texttt{invalid\_argument}. Пусть $L$ --- сумма длин шаблонов,
+% $k$ --- их число, $n$ --- длина текста, $V\le L+1$ --- число вершин бора.
+% Требуется $L+1,k,n<\texttt{INT\_MAX}$.
+% Время $O(L+26V+n+k)$, дополнительная память $O(26V+k)$.
+% Автомат строится заново для каждого текста.
+% Тематический источник: \url{https://ru.algorithmica.org/cs/string-structures/aho-corasick/}.
+% Код ниже самостоятельный: вместо указателей и ленивых переходов из статьи
+% использованы массивы, обход в ширину и накопление счётчиков по суффиксным ссылкам.
+% \subsection*{Реализация}
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Для пустого шаблона ответ отдельно равен $n+1$: это все позиции между
+% символами и по краям текста. Для непустых шаблонов обратный порядок
+% обхода в ширину передаёт счётчик вершины её суффиксной ссылке:
+% так учитываются все шаблоны-суффиксы без перебора совпадений.
+% Для большого алфавита можно хранить разреженные переходы, пересмотрев
+% оценки времени. Для выдачи позиций вхождений добавьте выходные ссылки
+% на терминальные вершины; время тогда зависит и от числа совпадений.
+

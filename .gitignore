@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+/check.py
+/test_*.py
+
+*.pdf
+!/main.pdf
+
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.xdv

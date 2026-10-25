@@ -1,0 +1,319 @@
+\section{Алгоритм Дейкстры}
+Находит кратчайшие пути от источника в ориентированном или неориентированном графе с неотрицательными весами и возвращает расстояния и родителей; $2^{62}$ означает недостижимость, путь восстанавливается по \texttt{parent} от цели к источнику с разворотом.
+Вход --- списки дуг $(to,w)$, $1\le n<\texttt{INT\_MAX}$, длины списков меньше \texttt{INT\_MAX}, источник и концы дуг --- корректные индексы $0\ldots n-1$; требуется $0\le w<2^{62}$ и все конечные расстояния меньше $2^{62}$.
+Петли и кратные рёбра допустимы; для неориентированного графа нужны обе дуги.
+Время $O(n+m\log(m+2))$, память $O(n+m)$.
+\begin{lstlisting}[name=graphs_dijkstra]
+pair<vector<ll>, vector<int>> dijkstra(
+        const vector<vector<pair<int, ll>>>& graph, int source) {
+    const ll infinity = 1LL << 62;
+    int n = graph.size();
+    vector<ll> distance(n, infinity);
+    vector<int> parent(n, -1);
+    using State = pair<ll, int>;
+    priority_queue<State, vector<State>, greater<State>> queue;
+    distance[source] = 0;
+    queue.push({0, source});
+    while (!queue.empty()) {
+        auto [current, vertex] = queue.top();
+        queue.pop();
+        if (current != distance[vertex]) continue;
+        for (auto [next, weight] : graph[vertex]) {
+            if (weight >= infinity - current) continue;
+            ll candidate = current + weight;
+            if (candidate >= distance[next]) continue;
+            distance[next] = candidate;
+            parent[next] = vertex;
+            queue.push({candidate, next});
+        }
+    }
+    return {distance, parent};
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Кратчайшие пути от одной вершины в ориентированном или неориентированном
+% графе с неотрицательными весами. Вершины $0\ldots n-1$, $n\ge1$;
+% $0\le w<2^{62}$, все конечные расстояния должны быть меньше
+% $2^{62}$. Петли и кратные рёбра допустимы. В неориентированном графе
+% добавляйте обе дуги. Время $O(n+m\log(m+2))$, память $O(n+m)$.
+% Результат --- расстояния и родители вершин.
+% $2^{62}$ означает недостижимость; путь восстанавливается по
+% \texttt{parent} от цели до источника и разворачивается.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/shortest-paths/dijkstra/}.
+% Число вершин и длины списков смежности меньше \texttt{INT\_MAX};
+% источник и концы дуг --- корректные индексы вершин.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Для весов $0/1$ --- поиск в ширину с деком за $O(n+m)$; для плотного графа ---
+% версия за $O(n^2+m)$. Отрицательные веса требуют другого алгоритма.
+% Для одной цели можно завершить поиск при извлечении её актуального расстояния.
+
+\section{Компоненты сильной связности: алгоритм Косарайю}
+Разбивает ориентированный граф на компоненты взаимно достижимых вершин и возвращает число компонент и их номера для каждой вершины; номера $0\ldots count-1$ топологически упорядочены, межкомпонентная дуга ведёт от меньшего к большему.
+Вход --- списки смежности с корректными индексами $0\ldots n-1$, число вершин и длины списков меньше \texttt{INT\_MAX}; пустой граф, петли и кратные дуги допустимы.
+Обходы итеративные, время и память $O(n+m)$, включая обратный граф.
+\begin{lstlisting}[name=graphs_kosaraju]
+pair<int, vector<int>> kosaraju(const vector<vector<int>>& graph) {
+    int n = graph.size();
+    vector<vector<int>> reverseGraph(n);
+    for (int vertex = 0; vertex < n; ++vertex)
+        for (int next : graph[vertex])
+            reverseGraph[next].push_back(vertex);
+    vector<char> visited(n);
+    vector<int> order, component(n, -1);
+    for (int root = 0; root < n; ++root) {
+        if (visited[root]) continue;
+        vector<pair<int, int>> stack = {{root, 0}};
+        visited[root] = true;
+        while (!stack.empty()) {
+            int vertex = stack.back().first;
+            int& index = stack.back().second;
+            if (index == (int)graph[vertex].size()) {
+                order.push_back(vertex);
+                stack.pop_back();
+            } else {
+                int next = graph[vertex][index++];
+                if (visited[next]) continue;
+                visited[next] = true;
+                stack.push_back({next, 0});
+            }
+        }
+    }
+    int count = 0;
+    reverse(order.begin(), order.end());
+    for (int root : order) {
+        if (component[root] != -1) continue;
+        vector<int> stack = {root};
+        component[root] = count;
+        while (!stack.empty()) {
+            int vertex = stack.back();
+            stack.pop_back();
+            for (int next : reverseGraph[vertex]) {
+                if (component[next] != -1) continue;
+                component[next] = count;
+                stack.push_back(next);
+            }
+        }
+        ++count;
+    }
+    return {count, component};
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Разбиение ориентированного графа на компоненты сильной связности:
+% внутри каждой компоненты все вершины взаимно достижимы.
+% Вершины $0\ldots n-1$, допускается пустой граф, петли и кратные дуги.
+% Время и память $O(n+m)$, включая обратный граф. Обходы итеративные.
+% Результат --- число компонент и массив их номеров для каждой вершины.
+% Номера компонент $0\ldots count-1$ идут в топологическом порядке:
+% межкомпонентная дуга ведёт от меньшего номера к большему.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/graph-traversals/scc/}.
+% Число вершин и длины списков смежности меньше \texttt{INT\_MAX};
+% концы дуг --- корректные индексы вершин.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Конденсация получается сжатием компонент и удалением петель;
+% при необходимости удалите повторяющиеся дуги. Применения: выполнимость
+% булевых формул с двумя литералами в дизъюнкции, динамическое
+% программирование по ориентированному ациклическому графу.
+% Алгоритм Тарьяна не хранит обратный граф.
+
+\section{Мосты: поиск в глубину с номерами рёбер}
+Находит рёбра неориентированного графа, удаление которых увеличивает число компонент связности; вход \texttt{edges} --- пары концов, результат --- номера мостов по позициям в \texttt{edges} без сортировки.
+Требуется $0\le n,m<\texttt{INT\_MAX}$ и корректные индексы концов $0\ldots n-1$; несвязность, пустой граф, петли и кратные рёбра допустимы.
+Время и память $O(n+m)$; глубина рекурсии до $n$, поэтому для глубоких графов нужен достаточный стек или итеративный поиск в глубину.
+\begin{lstlisting}[name=graphs_bridges]
+vector<int> bridges(int n, const vector<pair<int, int>>& edges) {
+    vector<vector<pair<int, int>>> graph(n);
+    for (int id = 0; id < (int)edges.size(); ++id) {
+        auto [first, second] = edges[id];
+        graph[first].push_back({second, id});
+        graph[second].push_back({first, id});
+    }
+    vector<int> entry(n, -1), low(n), answer;
+    int timer = 0;
+    auto dfs = [&](auto&& self, int vertex, int parentEdge) -> void {
+        entry[vertex] = low[vertex] = timer++;
+        for (auto [next, id] : graph[vertex]) {
+            if (id == parentEdge) continue;
+            if (entry[next] != -1) {
+                low[vertex] = min(low[vertex], entry[next]);
+            } else {
+                self(self, next, id);
+                low[vertex] = min(low[vertex], low[next]);
+                if (low[next] > entry[vertex]) answer.push_back(id);
+            }
+        }
+    };
+    for (int vertex = 0; vertex < n; ++vertex)
+        if (entry[vertex] == -1) dfs(dfs, vertex, -1);
+    return answer;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Мост --- ребро неориентированного графа, удаление которого увеличивает
+% число компонент связности. Вершины $0\ldots n-1$, рёбра нумеруются
+% по позиции в \texttt{edges}. Допустимы несвязность, пустой граф,
+% петли и кратные рёбра. Время и память $O(n+m)$.
+% \texttt{edges} --- пары концов. Результат --- номера мостов без сортировки.
+% Глубина рекурсии до $n$: для глубоких графов нужен достаточный стек
+% или итеративный поиск в глубину.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/graph-traversals/bridges/}.
+% $0\le n,m<\texttt{INT\_MAX}$; концы рёбер --- корректные индексы вершин.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Пропускается именно родительское ребро, а не родительская вершина:
+% иначе параллельные рёбра ошибочно станут мостами. После удаления мостов
+% можно сжать оставшиеся компоненты и получить лес мостов.
+% Для точек сочленения используется условие $low[child]\ge entry[v]$;
+% корень обхода обрабатывается отдельно по числу детей.
+
+\section{Наименьший общий предок: двоичные подъёмы}
+Находит наименьших общих предков для пар вершин из \texttt{queries} и возвращает ответы в порядке запросов; пустой список запросов допустим.
+Вход --- связное неориентированное дерево без петель и кратных рёбер, $1\le n<\texttt{INT\_MAX}$, корень, концы рёбер и вершины запросов --- корректные индексы $0\ldots n-1$; индексы и глубины хранятся в \texttt{int}.
+Каждый вызов заново строит таблицу за $O(n\log n)$ без рекурсии, запрос занимает $O(\log n)$, память с ответами --- $O(n\log n+q)$.
+\begin{lstlisting}[name=graphs_lca]
+vector<int> lca(const vector<vector<int>>& graph,
+        const vector<pair<int, int>>& queries, int root = 0) {
+    int n = graph.size(), levels = 1;
+    while ((1LL << levels) <= n) ++levels;
+    vector<int> depth(n, -1), order = {root};
+    vector<vector<int>> up(levels, vector<int>(n, root));
+    depth[root] = 0;
+    for (int index = 0; index < (int)order.size(); ++index) {
+        int vertex = order[index];
+        for (int next : graph[vertex]) {
+            if (depth[next] != -1) continue;
+            depth[next] = depth[vertex] + 1;
+            up[0][next] = vertex;
+            order.push_back(next);
+        }
+    }
+    for (int level = 1; level < levels; ++level)
+        for (int vertex = 0; vertex < n; ++vertex)
+            up[level][vertex] = up[level - 1][up[level - 1][vertex]];
+    vector<int> answers;
+    answers.reserve(queries.size());
+    for (auto [first, second] : queries) {
+        if (depth[first] < depth[second]) swap(first, second);
+        int difference = depth[first] - depth[second];
+        for (int level = 0; level < levels; ++level)
+            if ((difference >> level) & 1) first = up[level][first];
+        if (first != second) {
+            for (int level = levels - 1; level >= 0; --level) {
+                if (up[level][first] == up[level][second]) continue;
+                first = up[level][first];
+                second = up[level][second];
+            }
+            first = up[0][first];
+        }
+        answers.push_back(first);
+    }
+    return answers;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Наименьший общий предок двух вершин корневого дерева.
+% Вход --- связное неориентированное дерево без петель и кратных рёбер,
+% $n\ge1$, вершины $0\ldots n-1$, корректные корень и вершины запросов.
+% Подготовка $O(n\log n)$, каждый запрос $O(\log n)$, без рекурсии.
+% Для $q$ запросов память $O(n\log n+q)$ с учётом ответов.
+% \texttt{queries} --- пары вершин; ответы идут в том же порядке.
+% Пустой список запросов допустим. Каждый вызов заново строит таблицу.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/trees/binary-lifting/}.
+% $n<\texttt{INT\_MAX}$; индексы и глубины хранятся в \texttt{int}.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% В таблице можно хранить минимум, максимум или сумму на пути подъёма.
+% Для расстояний в рёбрах дополнительно верните глубины:
+% $\operatorname{depth}[u]+\operatorname{depth}[v]-2\operatorname{depth}[a]$,
+% где $a$ --- общий предок. Для взвешенного расстояния храните суммы
+% от корня в \texttt{ll}. Альтернатива при большом числе запросов ---
+% эйлеров обход и запросы минимума на отрезке.
+
+\section{Максимальный поток: алгоритм Диница}
+Вычисляет величину максимального потока в ориентированной сети по дугам $(from,to,capacity)$; исходные рёбра не меняются, каждый вызов считает поток с нуля.
+Требуется $2\le n<\texttt{INT\_MAX}$, $2m<\texttt{INT\_MAX}$ для числа исходных дуг $m$, корректные индексы $0\ldots n-1$, различные исток и сток, целые неотрицательные ёмкости с суммой не более $2^{62}$; петли и кратные дуги допустимы.
+Время $O(n^2m)$, память $O(n+m)$; глубина рекурсии до $n$, для длинных путей необходим достаточный стек.
+\begin{lstlisting}[name=graphs_dinic]
+ll dinic(int n, const vector<tuple<int, int, ll>>& edges,
+         int source, int sink) {
+    struct Edge { int to; ll capacity; };
+    vector<Edge> residual;
+    vector<vector<int>> graph(n);
+    vector<int> level(n), pointer(n);
+    for (auto [from, to, capacity] : edges) {
+        int id = residual.size();
+        residual.push_back({to, capacity});
+        residual.push_back({from, 0});
+        graph[from].push_back(id);
+        graph[to].push_back(id ^ 1);
+    }
+    auto bfs = [&]() {
+        fill(level.begin(), level.end(), -1);
+        queue<int> queue;
+        level[source] = 0;
+        queue.push(source);
+        while (!queue.empty()) {
+            int vertex = queue.front();
+            queue.pop();
+            for (int id : graph[vertex]) {
+                const auto& edge = residual[id];
+                if (!edge.capacity || level[edge.to] != -1) continue;
+                level[edge.to] = level[vertex] + 1;
+                queue.push(edge.to);
+            }
+        }
+        return level[sink] != -1;
+    };
+    auto dfs = [&](auto&& self, int vertex, ll pushed) -> ll {
+        if (vertex == sink) return pushed;
+        for (int& index = pointer[vertex];
+             index < (int)graph[vertex].size(); ++index) {
+            int id = graph[vertex][index];
+            auto& edge = residual[id];
+            if (!edge.capacity || level[edge.to] != level[vertex] + 1)
+                continue;
+            ll sent = self(self, edge.to, min(pushed, edge.capacity));
+            if (!sent) continue;
+            edge.capacity -= sent;
+            residual[id ^ 1].capacity += sent;
+            return sent;
+        }
+        return 0;
+    };
+    ll total = 0;
+    while (bfs()) {
+        fill(pointer.begin(), pointer.end(), 0);
+        while (ll sent = dfs(dfs, source, 1LL << 62)) total += sent;
+    }
+    return total;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Максимальный поток в ориентированной сети: $n\ge2$, вершины
+% $0\ldots n-1$, различные исток и сток, целые неотрицательные ёмкости.
+% Сумма исходных ёмкостей не превышает $2^{62}$; петли и кратные дуги допустимы.
+% Время $O(n^2m)$, память $O(n+m)$, глубина рекурсии до $n$:
+% для длинных путей обеспечьте достаточный стек.
+% Каждый элемент \texttt{edges} содержит начало, конец и ёмкость дуги.
+% Результат --- величина максимального потока.
+% Исходные рёбра не меняются; каждый вызов вычисляет поток с нуля.
+% \subsection*{Реализация}
+% Материал о постановке задачи: \url{https://ru.algorithmica.org/cs/flows/}
+% (без реализации Диница).
+% $n<\texttt{INT\_MAX}$, $2m<\texttt{INT\_MAX}$, где $m$ --- число исходных дуг;
+% концы дуг --- корректные индексы вершин.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Чтобы получить минимальный разрез, дополнительно верните вершины с
+% \texttt{level[v] != -1} после завершения алгоритма: это сторона истока.
+% Для восстановления потока по исходной дуге с номером $i$ верните
+% \texttt{residual[2 * i + 1].capacity}.
+% Дополнения: масштабирование ёмкостей, нижние границы потока,
+% двудольные паросочетания.
+

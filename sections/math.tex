@@ -1,0 +1,265 @@
+\section{Бинарное возведение в степень по модулю}
+Вычисляет $a^e\bmod m$ за $O(\log(e+1))$ времени и $O(1)$ памяти, возвращая число из $[0,m)$.
+Основание --- любое значение \texttt{int}, $0\le e\le\texttt{LLONG\_MAX}$, модуль типа \texttt{int}: $1\le m\le2\cdot10^9$; произведения вычисляются в \texttt{ll} и меньше $4\cdot10^{18}$.
+При $e=0$ результат равен $1\bmod m$, в том числе для $a=0$.
+\begin{lstlisting}[name=math_power]
+int modularPower(int base, ll exponent, int modulus) {
+    assert(exponent >= 0 && modulus > 0 && modulus <= 2000000000);
+    base %= modulus;
+    if (base < 0) base += modulus;
+    int result = 1 % modulus;
+    while (exponent > 0) {
+        if (exponent & 1)
+            result = (ll)result * base % modulus;
+        base = (ll)base * base % modulus;
+        exponent >>= 1;
+    }
+    return result;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Вычисляет $a^e\bmod m$ за $O(\log(e+1))$ времени и $O(1)$ памяти.
+% Основание --- любое значение \texttt{int}, $0\le e\le\texttt{LLONG\_MAX}$,
+% модуль типа \texttt{int}: $1\le m\le2\cdot10^9$. Результат лежит в $[0,m)$.
+% При $e=0$ возвращает $1\bmod m$, в том числе для $a=0$.
+% Произведения вычисляются в \texttt{ll} и меньше $4\cdot10^{18}$.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/algebra/binpow/}.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Для отрицательного показателя сначала найдите обратный элемент;
+% он существует только при взаимной простоте основания и модуля.
+% Сокращать показатель по $\varphi(m)$ можно при $\gcd(a,m)=1$.
+% При большом числе операций с одним модулем возможна редукция Монтгомери.
+
+\section{Расширенный алгоритм Евклида и обратный элемент}
+Расширенный алгоритм Евклида возвращает тройку $(g,x,y)$ с $g=\gcd(a,b)$ и $ax+by=g$ для входов \texttt{int}, $0\le a,b\le\texttt{INT\_MAX}$; для $(0,0)$ результат $(0,1,0)$.
+Обратный элемент для любого \texttt{int} по модулю $2\le m\le\texttt{INT\_MAX}$ возвращается как \texttt{optional<int>}: пустой при $\gcd(value,m)\ne1$, иначе число из $[0,m)$.
+Коэффициенты и промежуточные произведения вычисляются в \texttt{ll}: модули коэффициентов не превосходят \texttt{INT\_MAX}, произведение частного и коэффициента --- $\texttt{INT\_MAX}^2$, вычитание также безопасно.
+Время $O(\log(\max(a,b)+2))$, память $O(1)$.
+\begin{lstlisting}[name=math_euclid]
+tuple<int, ll, ll> extendedGcd(int first, int second) {
+    assert(first >= 0 && second >= 0);
+    ll firstX = 1, firstY = 0, secondX = 0, secondY = 1;
+    while (second != 0) {
+        int quotient = first / second;
+        int remainder = first % second;
+        first = second;
+        second = remainder;
+        ll nextX = firstX - quotient * secondX;
+        ll nextY = firstY - quotient * secondY;
+        firstX = secondX;
+        firstY = secondY;
+        secondX = nextX;
+        secondY = nextY;
+    }
+    return {first, firstX, firstY};
+}
+
+optional<int> modularInverse(int value, int modulus) {
+    assert(modulus >= 2);
+    value %= modulus;
+    if (value < 0) value += modulus;
+    auto [divisor, coefficient, unused] = extendedGcd(value, modulus);
+    if (divisor != 1) return nullopt;
+    coefficient %= modulus;
+    if (coefficient < 0) coefficient += modulus;
+    return coefficient;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Находит $g=\gcd(a,b)$ и коэффициенты $ax+by=g$ для
+% $0\le a,b\le\texttt{INT\_MAX}$, входы имеют тип \texttt{int}.
+% Для $(0,0)$ возвращает $(0,1,0)$; результат --- тройка $(g,x,y)$.
+% Время $O(\log(\max(a,b)+2))$, память $O(1)$.
+% Обратный элемент ищется для произвольного \texttt{int} по модулю
+% $2\le m\le\texttt{INT\_MAX}$. Возвращает \texttt{optional<int>}:
+% пустой при $\gcd(value,m)\ne1$, иначе содержит число из $[0,m)$.
+% Все коэффициенты и их промежуточные произведения вычисляются в \texttt{ll}.
+% При этих входах модули коэффициентов не превосходят \texttt{INT\_MAX},
+% а произведение частного и коэффициента --- $\texttt{INT\_MAX}^2$;
+% вычитание также безопасно в \texttt{ll}.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/modular/extended-euclid/},
+% \url{https://ru.algorithmica.org/cs/modular/reciprocal/}.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Для $ax+by=c$ необходимо $g\mid c$; при $g>0$ умножьте коэффициенты
+% на $c/g$, контролируя переполнение. Все решения:
+% $(x+k\,b/g,y-k\,a/g)$ после такого масштабирования.
+% Алгоритм также используется в китайской теореме об остатках.
+% Для простого модуля обратный ненулевого остатка равен $a^{m-2}\bmod m$.
+
+\section{Линейное решето с минимальным простым делителем}
+Строит массив минимальных простых делителей чисел от $2$ до входного $n$; для $0$ и $1$ записан ноль, при $x\ge2$ число простое тогда и только тогда, когда \texttt{smallest[x] == x}.
+Требуется $0\le n<\texttt{INT\_MAX}$ и достаточно памяти; время и память $O(n)$.
+Для факторизации $2\le x\le n$ последовательно берут \texttt{smallest[x]} и делят $x$ на него за $O(\log x)$.
+\begin{lstlisting}[name=math_sieve]
+vector<int> smallestPrimeFactors(int limit) {
+    assert(limit >= 0 && limit < INT_MAX);
+    vector<int> smallest(limit + 1), primes;
+    for (int number = 2; number <= limit; ++number) {
+        if (smallest[number] == 0) {
+            smallest[number] = number;
+            primes.push_back(number);
+        }
+        for (int prime : primes) {
+            if (prime > smallest[number] || prime > limit / number) break;
+            smallest[number * prime] = prime;
+        }
+    }
+    return smallest;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Строит массив минимальных простых делителей всех чисел от $2$ до $n$.
+% Время $O(n)$, память $O(n)$; требуется $0\le n<\texttt{INT\_MAX}$
+% и достаточно памяти. Для $0$ и $1$ записан ноль.
+% Число $x\ge2$ простое тогда и только тогда, когда
+% \texttt{smallest[x] == x}. Для факторизации $2\le x\le n$ последовательно
+% берите \texttt{smallest[x]} и делите $x$ на него; время $O(\log x)$.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/factorization/eratosthenes/}.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% В том же проходе можно вычислять функцию Эйлера и функцию Мёбиуса.
+% Если нужны только признаки простоты, битовое решето Эратосфена экономит
+% память. Для большого интервала $[L,R]$ используйте сегментированное решето
+% с простыми до $\sqrt R$; хранить делители всех чисел до $R$ не потребуется.
+
+\section{Метод Гаусса для решения линейной системы}
+Решает вещественную систему $Ax=b$ по расширенной матрице из $n$ строк по $m+1$ чисел с $b$ в последнем столбце; возвращает статус $0$ (нет решения, вектор пуст), $1$ (одно) или $2$ (бесконечно много, возвращено одно со свободными переменными, равными нулю).
+Допустимы $n=0$, $m=0$; размеры меньше \texttt{INT\_MAX}, все числа конечны, промежуточные вычисления не должны переполнять \texttt{db}.
+Порог \texttt{epsilon} конечный и положительный, сравнения ведущих элементов и невязки абсолютные; данные следует масштабировать, для плохо обусловленных систем статус и решение могут быть неточными.
+Время $O(nm\min(n,m)+nm)$, память $O(n(m+1)+m)$ с копией входа.
+\begin{lstlisting}[name=math_gauss]
+pair<int, vector<db>> gauss(vector<vector<db>> matrix, int variables,
+                            db epsilon = 1e-9) {
+    assert(variables >= 0 && variables < INT_MAX);
+    assert(isfinite(epsilon) && epsilon > 0 && matrix.size() < INT_MAX);
+    int rows = matrix.size(), rank = 0;
+    for (const auto& row : matrix) {
+        assert(row.size() == static_cast<unsigned>(variables + 1));
+        for (db value : row) assert(isfinite(value));
+    }
+    auto original = matrix;
+    vector<int> pivotRow(variables, -1);
+    for (int column = 0; column < variables && rank < rows; ++column) {
+        int selected = rank;
+        for (int row = rank + 1; row < rows; ++row)
+            if (abs(matrix[row][column]) > abs(matrix[selected][column]))
+                selected = row;
+        if (abs(matrix[selected][column]) <= epsilon) continue;
+        swap(matrix[selected], matrix[rank]);
+        pivotRow[column] = rank;
+        for (int entry = variables; entry >= column; --entry)
+            matrix[rank][entry] /= matrix[rank][column];
+        for (int row = 0; row < rows; ++row) {
+            if (row == rank) continue;
+            for (int entry = variables; entry >= column; --entry)
+                matrix[row][entry] -= matrix[rank][entry] * matrix[row][column];
+        }
+        ++rank;
+    }
+    vector<db> solution(variables);
+    for (int column = 0; column < variables; ++column)
+        if (pivotRow[column] != -1)
+            solution[column] = matrix[pivotRow[column]][variables];
+    for (const auto& row : original) {
+        db residual = -row[variables];
+        for (int column = 0; column < variables; ++column)
+            residual += row[column] * solution[column];
+        if (abs(residual) > epsilon) return {0, {}};
+    }
+    return {rank == variables ? 1 : 2, solution};
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Решает $Ax=b$ с вещественными коэффициентами. Вход --- расширенная
+% матрица из $n$ строк по $m+1$ чисел, последний столбец содержит $b$.
+% Статусы: $0$ --- нет решения (вектор пуст), $1$ --- одно,
+% $2$ --- бесконечно много (возвращено одно, свободные переменные равны нулю).
+% Допустимы $n=0$ и $m=0$; размеры меньше \texttt{INT\_MAX}.
+% Время $O(nm\min(n,m)+nm)$, память $O(n(m+1)+m)$ с копией входа.
+% Все числа конечны; промежуточные вычисления не должны переполнять \texttt{db}.
+% Порог \texttt{epsilon} положительный, абсолютный: малые ведущие элементы
+% считаются нулём. Масштабируйте данные; для плохо обусловленных систем
+% статус и решение могут быть неточными. Проверка невязки также абсолютная.
+% \subsection*{Реализация}
+% Материал: \url{https://ru.algorithmica.org/cs/algebra/gauss/};
+% реализация адаптирована для прямоугольных и вырожденных систем.
+% Столбцы обрабатываются справа налево, чтобы ведущий элемент
+% и множитель строки сохранялись до последнего вычитания.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Для описания всех решений постройте базис ядра по свободным переменным.
+% Для точной арифметики по простому модулю замените деление обратным элементом;
+% над составным модулем этот подход напрямую не работает.
+% Относительный порог, \texttt{long double} и выбор ведущего элемента
+% по всей подматрице могут повысить устойчивость, но не гарантируют её.
+
+\section{Выпуклая оболочка целочисленных точек}
+Монотонная цепь строит минимальный выпуклый многоугольник, содержащий входные точки \texttt{pair<int, int>}; результат идёт против часовой стрелки от лексикографически минимальной точки без её повторения, дубликаты и промежуточные точки сторон удалены.
+Требуется $|x|,|y|\le10^9$ и число точек меньше \texttt{INT\_MAX}; приведение к \texttt{ll} делается до вычитания, модули разностей не больше $2\cdot10^9$, произведений --- $4\cdot10^{18}$, их разности --- $8\cdot10^{18}$, что помещается в \texttt{ll}.
+Пустой вход даёт пустой ответ, одна уникальная точка возвращается сама, коллинеарный набор --- два крайних конца в лексикографическом порядке.
+Время $O(n\log(n+1))$, память $O(n)$.
+\begin{lstlisting}[name=geometry_hull]
+vector<pair<int, int>> convexHull(vector<pair<int, int>> points) {
+    assert(points.size() < INT_MAX);
+    for (auto [x, y] : points) {
+        assert(-1000000000 <= x && x <= 1000000000);
+        assert(-1000000000 <= y && y <= 1000000000);
+    }
+    sort(points.begin(), points.end());
+    points.erase(unique(points.begin(), points.end()), points.end());
+    if (points.size() <= 1) return points;
+    auto cross = [](const auto& first, const auto& second, const auto& third) {
+        ll dx = (ll)second.first - first.first;
+        ll dy = (ll)second.second - first.second;
+        return dx * ((ll)third.second - first.second)
+             - dy * ((ll)third.first - first.first);
+    };
+    vector<pair<int, int>> lower, upper;
+    for (const auto& point : points) {
+        while (lower.size() >= 2 &&
+               cross(lower[lower.size() - 2], lower.back(), point) <= 0)
+            lower.pop_back();
+        lower.push_back(point);
+    }
+    for (auto iterator = points.rbegin(); iterator != points.rend(); ++iterator) {
+        while (upper.size() >= 2 &&
+               cross(upper[upper.size() - 2], upper.back(), *iterator) <= 0)
+            upper.pop_back();
+        upper.push_back(*iterator);
+    }
+    lower.pop_back();
+    upper.pop_back();
+    lower.insert(lower.end(), upper.begin(), upper.end());
+    return lower;
+}
+\end{lstlisting}
+% \subsection*{Для чего нужен}
+% Алгоритм монотонной цепи строит минимальный выпуклый многоугольник,
+% содержащий все точки. Точка --- \texttt{pair<int, int>} с координатами $(x,y)$;
+% $|x|,|y|\le10^9$, число точек меньше \texttt{INT\_MAX}.
+% Приведение к \texttt{ll} выполняется до вычитания координат.
+% Модули разностей не больше $2\cdot10^9$, произведений --- $4\cdot10^{18}$,
+% их разности --- $8\cdot10^{18}$, что помещается в \texttt{ll}.
+% Время $O(n\log(n+1))$, память $O(n)$.
+% Результат идёт против часовой стрелки от лексикографически минимальной точки,
+% без повторения первой в конце. Дубликаты и промежуточные точки сторон удалены.
+% Пустой вход даёт пустой ответ; для одной уникальной точки возвращается она,
+% для коллинеарных точек --- два крайних конца в лексикографическом порядке.
+% \subsection*{Реализация}
+% Материал о построении оболочки стеком:
+% \url{https://ru.algorithmica.org/cs/convex-hulls/graham/}.
+% Здесь используется монотонная цепь, а не полярная сортировка из статьи.
+%
+% \subsection*{Возможные улучшения и дополнения}
+% Чтобы сохранить все точки на границе, замените условие поворота
+% $\le0$ на $<0$ и отдельно обработайте полностью коллинеарный набор,
+% иначе точки будут повторяться. По оболочке можно искать диаметр
+% вращающимися калиперами за $O(h)$, где $h$ --- число её вершин.
+% При расширении диапазона координат заново проверьте границы произведений:
+% арифметика \texttt{ll} может переполниться.
+

@@ -1,0 +1,1093 @@
+\iffalse
+% \section{Дополнительные структуры: соглашения}
+% Все листинги самостоятельны; снаружи заданы \texttt{bits/stdc++.h},
+% \texttt{using namespace std; using ll=long long; using db=double; ll INF=1e9;}.
+% Глобальный \texttt{INF} не используется как бесконечность для \texttt{ll}.
+% Индексы начинаются с нуля, отрезки полуоткрытые. Вход удовлетворяет
+% описанным предусловиям. Размеры массивов, индексы узлов и их суммы помещаются
+% в \texttt{int}; память должна вмещать создаваемые узлы. Все суммы,
+% разности, произведения и промежуточные результаты помещаются в \texttt{ll};
+% расширенная целочисленная арифметика не используется.
+% Деревья --- связные неориентированные простые графы; если не сказано иначе,
+% они непусты и укоренены в вершине 0. Рекурсивным реализациям нужен стек
+% глубины $O(n)$ (у случайных treap --- ожидаемо $O(\log n)$).
+% Листинги написаны самостоятельно, а не скопированы из Algorithmica.
+% Тематические материалы Algorithmica по DSU и деревьям Фенвика:
+% \url{https://ru.algorithmica.org/cs/set-structures/dsu/},
+% \url{https://ru.algorithmica.org/cs/range-queries/fenwick/}.
+% Эти ссылки не являются источниками всех приведённых ниже алгоритмов.
+\fi
+\section{Система непересекающихся множеств с откатом}
+Изначально \texttt{parent[i]=i}, \texttt{size[i]=1}, история пуста; снимок --- её размер.
+Объединение возвращает признак успеха, откат восстанавливает снимок только текущей ветви истории.
+Без сжатия путей поиск и объединение стоят $O(\log n)$, откат --- $O(1)$ на отменённое объединение; память $O(n)$.
+\begin{lstlisting}[name=rollback_dsu]
+int rollback_root(const vector<int>& parent, int vertex) {
+    while (parent[vertex] != vertex) vertex = parent[vertex];
+    return vertex;
+}
+bool rollback_unite(vector<int>& parent, vector<int>& size,
+        vector<array<int, 3>>& history, int first, int second) {
+    first = rollback_root(parent, first);
+    second = rollback_root(parent, second);
+    if (first == second) return false;
+    if (size[first] < size[second]) swap(first, second);
+    history.push_back({second, first, size[first]});
+    parent[second] = first;
+    size[first] += size[second];
+    return true;
+}
+void rollback(vector<int>& parent, vector<int>& size,
+        vector<array<int, 3>>& history, int snapshot) {
+    assert(0 <= snapshot && snapshot <= int(history.size()));
+    while (int(history.size()) > snapshot) {
+        auto [child, root, oldSize] = history.back();
+        history.pop_back();
+        parent[child] = child;
+        size[root] = oldSize;
+    }
+}
+\end{lstlisting}
+% Позволяет вернуться к состоянию до группы объединений, например в офлайн
+% динамической связности. Изначально \texttt{parent[i]=i}, \texttt{size[i]=1},
+% история пуста. Снимок --- размер истории; откатывать можно только к снимку
+% текущей ветви истории. Сжатия путей нет. Поиск и объединение стоят
+% $O(\log n)$, откат --- $O(1)$ на отменённое успешное объединение;
+% память $O(n)$. Неудачное объединение историю не меняет.
+%
+% Историю можно дополнить агрегатами компонент и числом компонент. Для
+% динамической связности интервалы жизни рёбер раскладывают по дереву времени.
+
+\section{Система непересекающихся множеств с чётностью}
+Ограничение $(u,v,p)$ задаёт $color[u]\mathbin{\mathrm{xor}}color[v]=p$, $p\in\{0,1\}$; вершины нумеруются с нуля.
+Возвращает совместность каждого префикса ограничений; после противоречия все ответы ложны, для двудольности берут $p=1$.
+Время $O((n+q)\alpha(n))$, память $O(n+q)$.
+\begin{lstlisting}[name=parity_dsu]
+vector<bool> parity_dsu(int n, const vector<array<int, 3>>& edges) {
+    vector<int> parent(n), size(n, 1), parity(n);
+    iota(parent.begin(), parent.end(), 0);
+    auto find = [&](auto&& self, int vertex) -> int {
+        if (parent[vertex] == vertex) return vertex;
+        int oldParent = parent[vertex];
+        parent[vertex] = self(self, oldParent);
+        parity[vertex] ^= parity[oldParent];
+        return parent[vertex];
+    };
+    vector<bool> answer;
+    bool valid = true;
+    for (auto [first, second, required] : edges) {
+        int a = find(find, first), b = find(find, second);
+        int difference = parity[first] ^ parity[second] ^ required;
+        if (a == b) valid = valid && difference == 0;
+        else {
+            if (size[a] < size[b]) swap(a, b);
+            parent[b] = a;
+            parity[b] = difference;
+            size[a] += size[b];
+        }
+        answer.push_back(valid);
+    }
+    return answer;
+}
+\end{lstlisting}
+% Пакет ограничений $(u,v,p)$ задаёт $color[u]\mathbin{\mathrm{xor}}color[v]=p$,
+% где $p\in\{0,1\}$. После каждого ограничения возвращается признак
+% совместности всего префикса; после противоречия все ответы ложны.
+% Для проверки двудольности каждое ребро имеет $p=1$.
+% Время $O((n+q)\alpha(n))$, память $O(n+q)$.
+%
+% Можно хранить корректность отдельно для каждой компоненты или заменить
+% чётность потенциалами по модулю. Для отката нужно отказаться от сжатия путей.
+
+\section{Два дерева Фенвика: прибавление и сумма на отрезке}
+Массив изначально содержит $n$ нулей; запрос $(type,left,right,delta)$ типа 0 прибавляет \texttt{delta} на $[left,right)$, типа 1 возвращает сумму этого отрезка.
+Ответы выдаются только для типа 1; требуется $0\le n<\texttt{INT\_MAX}$, все суммы, отрицание \texttt{delta} и произведения на индексы помещаются в \texttt{ll}.
+Время $O((n+q)\log(n+1))$, память $O(n+q)$.
+\begin{lstlisting}[name=fenwick_range]
+vector<ll> fenwick_range(int n,
+        const vector<tuple<int, int, int, ll>>& queries) {
+    vector<ll> slope(n + 1), offset(n + 1), answer;
+    auto add = [&](vector<ll>& tree, int index, ll delta) {
+        for (++index; index <= n;) {
+            tree[index] += delta;
+            int step = index & -index;
+            if (step > n - index) break;
+            index += step;
+        }
+    };
+    auto prefix = [&](int right) {
+        ll a = 0, b = 0;
+        for (int index = right; index > 0; index -= index & -index) {
+            a += slope[index]; b += offset[index];
+        }
+        return a * right - b;
+    };
+    for (auto [type, left, right, delta] : queries) {
+        if (type == 0) {
+            add(slope, left, delta); add(slope, right, -delta);
+            add(offset, left, delta * left);
+            add(offset, right, -delta * right);
+        } else answer.push_back(prefix(right) - prefix(left));
+    }
+    return answer;
+}
+\end{lstlisting}
+% Исходный массив из $n\ge0$ нулей. Запрос $(type,left,right,delta)$:
+% тип 0 прибавляет \texttt{delta} на $[left,right)$, тип 1 возвращает сумму
+% (\texttt{delta} игнорируется). Ответы только для типа 1.
+% Время $O((n+q)\log(n+1))$, память $O(n+q)$; $n<\texttt{INT\_MAX}$.
+% В \texttt{ll} должны помещаться также отрицание \texttt{delta},
+% произведения разностей на индексы и суммы в обоих деревьях.
+%
+% Начальный массив можно построить по разностям за линейное время. Для
+% присваиваний вместо прибавлений удобнее дерево с отложенными операциями.
+
+\section{Поиск порядковой статистики в дереве Фенвика}
+Для массива неотрицательных частот и рангов $k\ge1$ возвращает индексы первых префиксов с суммой $\ge k$; если общей суммы не хватает, ответ $n$.
+Пустой массив допустим; $n<\texttt{INT\_MAX}$, частоты и их сумма помещаются в \texttt{ll}.
+Построение $O(n)$, запрос $O(\log(n+1))$, память $O(n+q)$.
+\begin{lstlisting}[name=fenwick_kth]
+vector<int> fenwick_kth(const vector<ll>& frequencies,
+        const vector<ll>& ranks) {
+    int n = frequencies.size();
+    vector<ll> tree(n + 1);
+    for (int i = 1; i <= n; ++i) {
+        tree[i] += frequencies[i - 1];
+        int step = i & -i;
+        if (step <= n - i) tree[i + step] += tree[i];
+    }
+    int highest = 1;
+    while (highest <= n / 2) highest *= 2;
+    vector<int> answer;
+    for (ll rank : ranks) {
+        assert(rank >= 1);
+        int index = 0;
+        for (int step = highest; step > 0; step /= 2) {
+            if (step <= n - index && tree[index + step] < rank) {
+                index += step;
+                rank -= tree[index];
+            }
+        }
+        answer.push_back(index);
+    }
+    return answer;
+}
+\end{lstlisting}
+% Для неизменяемых неотрицательных частот строит дерево и для каждого
+% $k\ge1$ возвращает индекс первого префикса с суммой не меньше $k$.
+% Если $k$ больше общей суммы, возвращает $n$; пустой массив допустим.
+% Построение $O(n)$, запрос $O(\log(n+1))$, память $O(n+q)$.
+% Все частоты и их общая сумма помещаются в \texttt{ll},
+% $n<\texttt{INT\_MAX}$. Отрицательные частоты запрещены.
+%
+% Для онлайн-частот построение и поиск можно вынести в отдельные функции с
+% общим внешним массивом; точечные изменения обязаны сохранять неотрицательность.
+
+\section{Разреженная таблица минимумов}
+Для неизменяемого массива возвращает минимумы на непустых полуинтервалах $[left,right)$; пустой массив допустим только без запросов.
+Построение и память $O(n\log(n+1))$, запрос $O(1)$, ответы занимают $O(q)$ памяти.
+\begin{lstlisting}[name=sparse_table]
+vector<ll> sparse_table(const vector<ll>& values,
+        const vector<pair<int, int>>& queries) {
+    int n = values.size();
+    vector<int> logarithm(n + 1);
+    for (int i = 2; i <= n; ++i) logarithm[i] = logarithm[i / 2] + 1;
+    vector<vector<ll>> table(logarithm[n] + 1, values);
+    for (int level = 1; level <= logarithm[n]; ++level) {
+        int length = 1 << level, half = length / 2;
+        for (int i = 0; i <= n - length; ++i)
+            table[level][i] = min(table[level - 1][i],
+                                  table[level - 1][i + half]);
+    }
+    vector<ll> answer;
+    for (auto [left, right] : queries) {
+        int level = logarithm[right - left];
+        answer.push_back(min(table[level][left],
+                             table[level][right - (1 << level)]));
+    }
+    return answer;
+}
+\end{lstlisting}
+% Минимум неизменяемого массива на непустых $[left,right)$ за $O(1)$.
+% Построение и память $O(n\log(n+1))$, ответы занимают ещё $O(q)$.
+% Пустой массив разрешён только без запросов.
+%
+% Минимум заменяется любой идемпотентной ассоциативной операцией, например
+% максимумом или НОД. Для суммы перекрывающиеся блоки не подходят;
+% можно использовать непересекающуюся разреженную таблицу.
+
+\section{Персистентное дерево: порядковая статистика отрезка}
+Для массива и запросов $(left,right,k)$ возвращает $k$-е по возрастанию значения на $[left,right)$ с учётом повторов.
+Требуется $1\le k\le right-left$; при пустом массиве запросов нет, число узлов помещается в \texttt{int}.
+Время $O((n+q)\log(n+1))$, память $O(n\log(n+1)+q)$.
+\begin{lstlisting}[name=persistent_kth]
+vector<ll> persistent_kth(const vector<ll>& values,
+        const vector<array<int, 3>>& queries) {
+    vector<ll> coordinates = values;
+    sort(coordinates.begin(), coordinates.end());
+    coordinates.erase(unique(coordinates.begin(), coordinates.end()),
+                      coordinates.end());
+    struct Node { int left = 0, right = 0, count = 0; };
+    vector<Node> nodes(1);
+    auto insert = [&](auto&& self, int old, int left, int right,
+                      int position) -> int {
+        int node = nodes.size();
+        Node copy = nodes[old];
+        nodes.push_back(copy);
+        ++nodes[node].count;
+        if (right - left > 1) {
+            int middle = left + (right - left) / 2;
+            if (position < middle) {
+                int child = self(self, copy.left, left, middle, position);
+                nodes[node].left = child;
+            } else {
+                int child = self(self, copy.right, middle, right, position);
+                nodes[node].right = child;
+            }
+        }
+        return node;
+    };
+    int length = coordinates.size();
+    vector<int> roots(1, 0);
+    for (ll value : values) {
+        int position = lower_bound(coordinates.begin(), coordinates.end(), value)
+                     - coordinates.begin();
+        roots.push_back(insert(insert, roots.back(), 0, length, position));
+    }
+    vector<ll> answer;
+    for (auto [left, right, rank] : queries) {
+        int a = roots[left], b = roots[right], low = 0, high = length;
+        while (high - low > 1) {
+            int count = nodes[nodes[b].left].count - nodes[nodes[a].left].count;
+            int middle = low + (high - low) / 2;
+            if (rank <= count) {
+                a = nodes[a].left; b = nodes[b].left; high = middle;
+            } else {
+                rank -= count;
+                a = nodes[a].right; b = nodes[b].right; low = middle;
+            }
+        }
+        answer.push_back(coordinates[low]);
+    }
+    return answer;
+}
+\end{lstlisting}
+% Запрос $(left,right,k)$ возвращает $k$-й по возрастанию элемент
+% $[left,right)$ с учётом повторов, $1\le k\le right-left$.
+% Версии хранят частоты префиксов после сжатия координат.
+% Время $O(n\log(n+1)+q\log(n+1))$, память $O(n\log(n+1)+q)$.
+% При $n=0$ запросов нет. Счётчики ограничены $n$.
+%
+% В узлах можно хранить суммы для суммы $k$ наименьших. Версии по вершинам
+% дерева вместе с LCA дают порядковые статистики на пути.
+
+\section{Динамическое дерево отрезков}
+Нулевой массив задан на целочисленном $[lower,upper)$; запрос $(type,left,right,delta)$ типа 0 прибавляет \texttt{delta} к позиции \texttt{left}, типа 1 возвращает сумму на $[left,right)$.
+Требуется $lower<upper$; разность границ и все суммы помещаются в \texttt{ll}, число узлов --- в \texttt{int}.
+Время $O(q\log(upper-lower+1))$, память $O(1+u\log(upper-lower+1)+q)$ для $u$ обновлений; запросы узлов не создают.
+\begin{lstlisting}[name=dynamic_segment]
+vector<ll> dynamic_segment(ll lower, ll upper,
+        const vector<tuple<int, ll, ll, ll>>& queries) {
+    struct Node { int left = 0, right = 0; ll sum = 0; };
+    vector<Node> nodes(2);
+    auto add = [&](auto&& self, int node, ll left, ll right,
+                   ll position, ll delta) -> void {
+        nodes[node].sum += delta;
+        if (right - left == 1) return;
+        ll middle = left + (right - left) / 2;
+        bool goLeft = position < middle;
+        int child = goLeft ? nodes[node].left : nodes[node].right;
+        if (!child) {
+            child = nodes.size(); nodes.push_back(Node{});
+            if (goLeft) nodes[node].left = child;
+            else nodes[node].right = child;
+        }
+        self(self, child, goLeft ? left : middle, goLeft ? middle : right,
+             position, delta);
+    };
+    auto sum = [&](auto&& self, int node, ll left, ll right,
+                   ll queryLeft, ll queryRight) -> ll {
+        if (!node || queryRight <= left || right <= queryLeft) return 0;
+        if (queryLeft <= left && right <= queryRight) return nodes[node].sum;
+        ll middle = left + (right - left) / 2;
+        return self(self, nodes[node].left, left, middle, queryLeft, queryRight)
+             + self(self, nodes[node].right, middle, right, queryLeft, queryRight);
+    };
+    vector<ll> answer;
+    for (auto [type, left, right, delta] : queries) {
+        if (type == 0) add(add, 1, lower, upper, left, delta);
+        else answer.push_back(sum(sum, 1, lower, upper, left, right));
+    }
+    return answer;
+}
+\end{lstlisting}
+% Разреженный нулевой массив на целочисленном $[lower,upper)$.
+% Запрос $(type,left,right,delta)$: тип 0 прибавляет к позиции
+% \texttt{left} (\texttt{right} игнорируется), тип 1 запрашивает сумму
+% $[left,right)$ (\texttt{delta} игнорируется).
+% Требуется $lower<upper$, разность $upper-lower$ помещается в \texttt{ll}.
+% Время $O(q\log(upper-lower+1))$, память $O(1+u\log(upper-lower+1)+q)$,
+% где $u$ --- число обновлений; запросы узлов не создают.
+%
+% При известных заранее координатах проще сжать их. Для обновлений отрезка
+% можно добавить отложенные метки, учитывая длины отсутствующих поддеревьев.
+
+\iffalse
+\section{Неявное декартово дерево с разворотом}
+Для массива и последовательности полуинтервалов $[left,right)$ возвращает массив после их разворотов; пустые отрезки допустимы.
+Ожидаемое время $O((n+q)\log(n+1))$, память $O(n)$; худшее время квадратичное, глубина рекурсии до $O(n)$.
+Фиксированный seed не защищает от специально подобранного входа.
+\begin{lstlisting}[name=implicit_treap]
+vector<ll> implicit_treap(const vector<ll>& values,
+        const vector<pair<int, int>>& reversals) {
+    struct Node {
+        ll value; int priority;
+        int left = 0, right = 0, size = 1;
+        bool reversed = false;
+    };
+    vector<Node> nodes(1, Node{0, 0});
+    nodes[0].size = 0;
+    mt19937 random(712367);
+    auto pull = [&](int node) {
+        nodes[node].size = 1 + nodes[nodes[node].left].size
+                            + nodes[nodes[node].right].size;
+    };
+    auto push = [&](int node) {
+        if (!node || !nodes[node].reversed) return;
+        swap(nodes[node].left, nodes[node].right);
+        for (int child : {nodes[node].left, nodes[node].right})
+            if (child) nodes[child].reversed = !nodes[child].reversed;
+        nodes[node].reversed = false;
+    };
+    auto split = [&](auto&& self, int node, int count) -> pair<int, int> {
+        if (!node) return {0, 0};
+        push(node);
+        int leftSize = nodes[nodes[node].left].size;
+        if (count <= leftSize) {
+            auto [first, second] = self(self, nodes[node].left, count);
+            nodes[node].left = second; pull(node);
+            return {first, node};
+        }
+        auto [first, second] = self(self, nodes[node].right, count-leftSize-1);
+        nodes[node].right = first; pull(node);
+        return {node, second};
+    };
+    auto merge = [&](auto&& self, int first, int second) -> int {
+        if (!first || !second) return first ? first : second;
+        push(first); push(second);
+        if (nodes[first].priority > nodes[second].priority) {
+            nodes[first].right = self(self, nodes[first].right, second);
+            pull(first); return first;
+        }
+        nodes[second].left = self(self, first, nodes[second].left);
+        pull(second); return second;
+    };
+    int root = 0;
+    for (ll value : values) {
+        int node = nodes.size();
+        nodes.push_back(Node{value, int(random() >> 1)});
+        root = merge(merge, root, node);
+    }
+    for (auto [left, right] : reversals) {
+        auto [first, rest] = split(split, root, left);
+        auto [middle, last] = split(split, rest, right-left);
+        if (middle) nodes[middle].reversed = !nodes[middle].reversed;
+        root = merge(merge, merge(merge, first, middle), last);
+    }
+    vector<ll> answer;
+    auto collect = [&](auto&& self, int node) -> void {
+        if (!node) return;
+        push(node);
+        self(self, nodes[node].left); answer.push_back(nodes[node].value);
+        self(self, nodes[node].right);
+    };
+    collect(collect, root);
+    return answer;
+}
+\end{lstlisting}
+\fi
+
+% Разворачивает указанные $[left,right)$ в последовательности и возвращает
+% итоговый массив. Локальные \texttt{split} и \texttt{merge} реализуют
+% разрез по числу элементов и склейку; пустые отрезки допустимы.
+% При случайных приоритетах ожидаемое время $O((n+q)\log(n+1))$,
+% память $O(n)$; худшее время квадратичное. Фиксированный seed делает
+% результаты воспроизводимыми, но не защищает от специально подобранного входа.
+%
+% Добавьте суммы и метки прибавления, вставку и удаление. Построение
+% монотонным стеком уменьшает начальную работу до $O(n)$.
+
+\iffalse
+\section{Дерево Ли Чао для минимума прямых}
+Запрос $(type,a,b)$ типа 0 добавляет прямую $y=ax+b$, типа 1 возвращает минимум при $x=a$; без прямых ответ \texttt{LLONG\_MAX}.
+Все запросы известны заранее; $ax$ и $ax+b$ помещаются в \texttt{ll}, $q<\texttt{INT\_MAX}/4$.
+Время $O(q\log(q+1))$, память $O(q)$.
+\begin{lstlisting}[name=li_chao]
+vector<ll> li_chao(const vector<tuple<int, ll, ll>>& queries) {
+    vector<ll> coordinates;
+    for (auto [type, a, b] : queries) {
+        (void)b;
+        if (type == 1) coordinates.push_back(a);
+    }
+    sort(coordinates.begin(), coordinates.end());
+    coordinates.erase(unique(coordinates.begin(), coordinates.end()),
+                      coordinates.end());
+    if (coordinates.empty()) return {};
+    int n = coordinates.size();
+    vector<pair<ll, ll>> lines(4 * n);
+    vector<bool> occupied(4 * n);
+    auto evaluate = [&](pair<ll, ll> line, int position) {
+        return line.first * coordinates[position] + line.second;
+    };
+    auto insert = [&](auto&& self, int node, int left, int right,
+                      pair<ll, ll> line) -> void {
+        if (!occupied[node]) {
+            occupied[node] = true; lines[node] = line; return;
+        }
+        int middle = left + (right - left) / 2;
+        bool betterLeft = evaluate(line, left) < evaluate(lines[node], left);
+        bool betterMiddle = evaluate(line, middle) < evaluate(lines[node], middle);
+        if (betterMiddle) swap(line, lines[node]);
+        if (right - left == 1) return;
+        if (betterLeft != betterMiddle) self(self, node*2, left, middle, line);
+        else self(self, node*2+1, middle, right, line);
+    };
+    vector<ll> answer;
+    for (auto [type, a, b] : queries) {
+        if (type == 0) insert(insert, 1, 0, n, {a, b});
+        else {
+            int position = lower_bound(coordinates.begin(), coordinates.end(), a)
+                         - coordinates.begin();
+            ll best = LLONG_MAX;
+            int node = 1, left = 0, right = n;
+            while (true) {
+                if (occupied[node]) best = min(best, evaluate(lines[node], position));
+                if (right - left == 1) break;
+                int middle = left + (right - left) / 2;
+                if (position < middle) { node *= 2; right = middle; }
+                else { node = node*2+1; left = middle; }
+            }
+            answer.push_back(best);
+        }
+    }
+    return answer;
+}
+\end{lstlisting}
+\fi
+
+% Запрос $(type,a,b)$: тип 0 добавляет прямую $y=ax+b$, тип 1 находит
+% минимум в $x=a$ (\texttt{b} игнорируется). Координаты запросов сжимаются
+% заранее; ответ без прямых --- \texttt{LLONG\_MAX}.
+% Каждое произведение $ax$ и значение $ax+b$ должно помещаться в \texttt{ll}.
+% Время $O(q\log(q+1))$, память $O(q)$; $q<\texttt{INT\_MAX}/4$.
+%
+% Для онлайн-координат применяют динамическое дерево на заданном диапазоне.
+% Можно добавлять прямую только на отрезке её применимости за $O(\log^2 n)$.
+
+\iffalse
+\section{Дерево отсортированных списков}
+Для неизменяемого массива запрос $(left,right,value)$ возвращает число элементов $\le value$ на $[left,right)$.
+Пустой массив допустим; $n<\texttt{INT\_MAX}/4$.
+Построение и память $O(n\log(n+1))$, запрос $O(\log^2(n+1))$, ответы занимают $O(q)$ памяти.
+\begin{lstlisting}[name=merge_sort_tree]
+vector<int> merge_sort_tree(const vector<ll>& values,
+        const vector<tuple<int, int, ll>>& queries) {
+    int n = values.size();
+    vector<vector<ll>> tree(4 * max(1, n));
+    auto build = [&](auto&& self, int node, int left, int right) -> void {
+        if (right - left == 1) { tree[node] = {values[left]}; return; }
+        int middle = left + (right - left) / 2;
+        self(self, node*2, left, middle); self(self, node*2+1, middle, right);
+        merge(tree[node*2].begin(), tree[node*2].end(),
+              tree[node*2+1].begin(), tree[node*2+1].end(),
+              back_inserter(tree[node]));
+    };
+    auto count = [&](auto&& self, int node, int left, int right,
+                     int queryLeft, int queryRight, ll value) -> int {
+        if (queryRight <= left || right <= queryLeft) return 0;
+        if (queryLeft <= left && right <= queryRight)
+            return upper_bound(tree[node].begin(), tree[node].end(), value)
+                 - tree[node].begin();
+        int middle = left + (right - left) / 2;
+        return self(self, node*2, left, middle, queryLeft, queryRight, value)
+             + self(self, node*2+1, middle, right, queryLeft, queryRight, value);
+    };
+    if (n) build(build, 1, 0, n);
+    vector<int> answer;
+    for (auto [left, right, value] : queries)
+        answer.push_back(n ? count(count, 1, 0, n, left, right, value) : 0);
+    return answer;
+}
+\end{lstlisting}
+% Запрос $(left,right,value)$ считает элементы $\le value$ на $[left,right)$.
+% Массив неизменяемый. Построение и память $O(n\log(n+1))$,
+% запрос $O(\log^2(n+1))$, ответы требуют $O(q)$ памяти.
+% Пустой массив допустим; $n<\texttt{INT\_MAX}/4$.
+%
+% Дробное каскадирование ускоряет запросы до $O(\log n)$ с большей памятью.
+% Для порядковых статистик можно использовать персистентное дерево частот.
+
+\fi
+\section{Монотонная очередь}
+Для массива возвращает минимумы всех окон длины $width$; требуется $1\le width\le n$.
+Время $O(n)$, дополнительная память $O(width)$ без ответов.
+\begin{lstlisting}[name=monotonic_queue]
+vector<ll> monotonic_queue(const vector<ll>& values, int width) {
+    int n = values.size();
+    assert(1 <= width && width <= n);
+    deque<int> queue;
+    vector<ll> answer;
+    for (int i = 0; i < n; ++i) {
+        while (!queue.empty() && queue.front() <= i-width) queue.pop_front();
+        while (!queue.empty() && values[queue.back()] >= values[i]) queue.pop_back();
+        queue.push_back(i);
+        if (i >= width-1) answer.push_back(values[queue.front()]);
+    }
+    return answer;
+}
+\end{lstlisting}
+% Возвращает минимумы всех окон длины $width$, где $1\le width\le n$.
+% Каждый индекс добавляется и удаляется не более одного раза:
+% время $O(n)$, дополнительная память $O(width)$ без ответов.
+%
+% Для максимума измените сравнение. Две очереди позволяют поддерживать
+% разность максимума и минимума в окне с монотонно движущимися границами.
+
+\iffalse
+\section{Порядковые статистики вместо расширения PBDS}
+Мультимножество изначально пусто; запрос $(type,value)$: 0 вставляет значение, 1 удаляет одно вхождение, если оно есть, 2 считает элементы строго меньше значения, 3 возвращает элемент с нулевым рангом \texttt{value}.
+Ответы только для типов 2 и 3; ранг должен существовать, размеры поддеревьев помещаются в \texttt{int}.
+Ожидаемое время $O(q\log(q+1))$, память $O(q)$; худшее время $O(q^2)$ и глубина рекурсии $O(q)$, фиксированный seed не защищает от специально подобранного входа.
+\begin{lstlisting}[name=order_statistics]
+vector<ll> order_statistics(const vector<pair<int, ll>>& queries) {
+    struct Node {
+        ll key; int priority;
+        int left = 0, right = 0, count = 1, size = 1;
+    };
+    vector<Node> nodes(1, Node{0, 0});
+    nodes[0].size = 0;
+    mt19937 random(98123);
+    auto pull = [&](int node) {
+        nodes[node].size = nodes[node].count + nodes[nodes[node].left].size
+                                           + nodes[nodes[node].right].size;
+    };
+    auto merge = [&](auto&& self, int first, int second) -> int {
+        if (!first || !second) return first ? first : second;
+        if (nodes[first].priority > nodes[second].priority) {
+            nodes[first].right = self(self, nodes[first].right, second);
+            pull(first); return first;
+        }
+        nodes[second].left = self(self, first, nodes[second].left);
+        pull(second); return second;
+    };
+    auto change = [&](auto&& self, int node, ll key, int delta) -> int {
+        if (!node) {
+            if (delta < 0) return 0;
+            int created = nodes.size();
+            nodes.push_back(Node{key, int(random() >> 1)});
+            return created;
+        }
+        if (key == nodes[node].key) {
+            nodes[node].count += delta;
+            if (!nodes[node].count)
+                return merge(merge, nodes[node].left, nodes[node].right);
+        } else {
+            bool left = key < nodes[node].key;
+            int child = self(self, left ? nodes[node].left : nodes[node].right,
+                             key, delta);
+            if (left) nodes[node].left = child;
+            else nodes[node].right = child;
+            if (child && nodes[child].priority > nodes[node].priority) {
+                if (left) {
+                    nodes[node].left = nodes[child].right;
+                    nodes[child].right = node;
+                } else {
+                    nodes[node].right = nodes[child].left;
+                    nodes[child].left = node;
+                }
+                pull(node); pull(child); return child;
+            }
+        }
+        pull(node); return node;
+    };
+    int root = 0;
+    vector<ll> answer;
+    for (auto [type, value] : queries) {
+        if (type < 2) root = change(change, root, value, type == 0 ? 1 : -1);
+        else if (type == 2) {
+            int node = root, count = 0;
+            while (node) {
+                if (value <= nodes[node].key) node = nodes[node].left;
+                else {
+                    count += nodes[nodes[node].left].size + nodes[node].count;
+                    node = nodes[node].right;
+                }
+            }
+            answer.push_back(count);
+        } else {
+            assert(0 <= value && value < nodes[root].size);
+            int node = root;
+            while (true) {
+                int leftSize = nodes[nodes[node].left].size;
+                if (value < leftSize) node = nodes[node].left;
+                else if (value < leftSize + nodes[node].count) {
+                    answer.push_back(nodes[node].key); break;
+                } else {
+                    value -= leftSize + nodes[node].count;
+                    node = nodes[node].right;
+                }
+            }
+        }
+    }
+    return answer;
+}
+\end{lstlisting}
+% Стандартный treap без дополнительных заголовков заменяет
+% \texttt{order\_of\_key} и \texttt{find\_by\_order} из PBDS.
+% Мультимножество исходно пусто. Запрос $(type,value)$: 0 вставляет,
+% 1 удаляет одно вхождение (если есть), 2 возвращает число элементов строго
+% меньше \texttt{value}, 3 возвращает элемент с нулевым рангом \texttt{value}.
+% Ранг должен существовать; ответы только для типов 2 и 3.
+% Ожидаемое время $O(q\log(q+1))$, память $O(q)$, худшее время $O(q^2)$.
+% Число элементов и сумма размеров помещаются в \texttt{int}.
+% Фиксированный seed не даёт гарантии против специально подобранного входа.
+%
+% Если допустим GNU PBDS, нужны отдельные обязательные заголовки
+% \path{ext/pb_ds/assoc_container.hpp} и
+% \path{ext/pb_ds/tree_policy.hpp}; они не входят в
+% \texttt{bits/stdc++.h}. Повторы там представляют парами из ключа и уникального
+% номера. При известных координатах проще использовать дерево Фенвика.
+
+\fi
+\section{Тяжёло-лёгкая декомпозиция дерева}
+Даны непустое неориентированное дерево с корнем 0 и значения вершин; запрос $(type,u,v,value)$ типа 0 присваивает \texttt{value} вершине $u$, типа 1 возвращает сумму на пути $u\ldots v$ включительно.
+Требуется $n<\texttt{INT\_MAX}$; разности значений и все суммы помещаются в \texttt{ll}, нужен стек глубины $O(n)$.
+Построение $O(n\log n)$, изменение $O(\log n)$, запрос пути $O(\log^2 n)$, память $O(n+q)$.
+\begin{lstlisting}[name=hld]
+vector<ll> hld(const vector<vector<int>>& graph, vector<ll> values,
+        const vector<tuple<int, int, int, ll>>& queries) {
+    int n = graph.size();
+    vector<int> parent(n, -1), depth(n), size(n, 1), heavy(n, -1), head(n), position(n);
+    auto sizes = [&](auto&& self, int vertex) -> void {
+        for (int child : graph[vertex]) if (child != parent[vertex]) {
+            parent[child] = vertex; depth[child] = depth[vertex] + 1;
+            self(self, child); size[vertex] += size[child];
+            if (heavy[vertex] == -1 || size[child] > size[heavy[vertex]])
+                heavy[vertex] = child;
+        }
+    };
+    sizes(sizes, 0);
+    int timer = 0;
+    auto decompose = [&](auto&& self, int vertex, int chain) -> void {
+        head[vertex] = chain; position[vertex] = timer++;
+        if (heavy[vertex] != -1) self(self, heavy[vertex], chain);
+        for (int child : graph[vertex])
+            if (child != parent[vertex] && child != heavy[vertex]) self(self, child, child);
+    };
+    decompose(decompose, 0, 0);
+    vector<ll> tree(n + 1), answer;
+    auto add = [&](int index, ll delta) {
+        for (++index; index <= n;) {
+            tree[index] += delta;
+            int step = index & -index;
+            if (step > n-index) break;
+            index += step;
+        }
+    };
+    auto prefix = [&](int right) {
+        ll sum = 0;
+        for (; right; right -= right & -right) sum += tree[right];
+        return sum;
+    };
+    for (int i = 0; i < n; ++i) add(position[i], values[i]);
+    for (auto [type, u, v, value] : queries) {
+        if (type == 0) {
+            add(position[u], value-values[u]); values[u] = value;
+        } else {
+            ll sum = 0;
+            while (head[u] != head[v]) {
+                if (depth[head[u]] < depth[head[v]]) swap(u, v);
+                sum += prefix(position[u]+1) - prefix(position[head[u]]);
+                u = parent[head[u]];
+            }
+            if (depth[u] > depth[v]) swap(u, v);
+            sum += prefix(position[v]+1) - prefix(position[u]);
+            answer.push_back(sum);
+        }
+    }
+    return answer;
+}
+\end{lstlisting}
+% Запрос $(type,u,v,value)$: тип 0 присваивает значение вершине $u$
+% ($v$ игнорируется), тип 1 возвращает сумму на пути $u\ldots v$,
+% включая обе вершины (\texttt{value} игнорируется).
+% Начальные значения заданы массивом длины $n$.
+% Построение $O(n\log n)$, изменение $O(\log n)$, путь $O(\log^2 n)$,
+% память $O(n+q)$. $n<\texttt{INT\_MAX}$; разность нового и старого значений,
+% суммы дерева Фенвика и все промежуточные суммы помещаются в \texttt{ll}.
+%
+% Для обновления всего пути замените Фенвик на ленивое дерево отрезков.
+% Для некоммутативных агрегатов нужно учитывать направление каждого куска пути.
+
+\section{Центроидная декомпозиция}
+Для неориентированного дерева возвращает родителей в дереве центроидов; у корня родитель $-1$, пустой вход даёт пустой вектор.
+Время $O(n\log n)$, память $O(n)$, высота результата $O(\log n)$; рекурсивным обходам нужен стек глубины $O(n)$.
+\begin{lstlisting}[name=centroid_decomposition]
+vector<int> centroid_decomposition(const vector<vector<int>>& graph) {
+    int n = graph.size();
+    vector<int> size(n), parent(n, -1);
+    vector<bool> removed(n);
+    auto measure = [&](auto&& self, int vertex, int previous) -> void {
+        size[vertex] = 1;
+        for (int child : graph[vertex]) if (child != previous && !removed[child]) {
+            self(self, child, vertex); size[vertex] += size[child];
+        }
+    };
+    auto locate = [&](auto&& self, int vertex, int previous, int total) -> int {
+        for (int child : graph[vertex])
+            if (child != previous && !removed[child] && size[child] > total/2)
+                return self(self, child, vertex, total);
+        return vertex;
+    };
+    auto build = [&](auto&& self, int vertex, int previous) -> void {
+        measure(measure, vertex, -1);
+        int center = locate(locate, vertex, -1, size[vertex]);
+        parent[center] = previous; removed[center] = true;
+        for (int child : graph[center]) if (!removed[child]) self(self, child, center);
+    };
+    if (n) build(build, 0, -1);
+    return parent;
+}
+\end{lstlisting}
+% Возвращает родителей в дереве центроидов; у корня родитель $-1$.
+% Каждый центроид разбивает текущую компоненту на части размера не больше
+% половины, поэтому высота результата $O(\log n)$.
+% Время $O(n\log n)$, память $O(n)$. Пустой граф возвращает пустой вектор.
+%
+% Расстояния до предков-центроидов позволяют отвечать о ближайшей отмеченной
+% вершине. Для подсчёта пар по расстоянию нужно вычитать вклад одной ветви.
+
+\section{Виртуальное дерево}
+Для дерева с корнем 0 и наборов важных вершин строит минимальные деревья, замкнутые по LCA.
+Каждое ребро содержит предка, потомка и длину пути между ними.
+Номера вершин исходные, рёбра направлены от предка к потомку, длина --- число исходных рёбер; повторы удаляются, пустой и одноэлементный наборы дают пустой список рёбер.
+Предобработка $O(n\log n)$, набор размера $k$ --- $O(k\log(k+1)+k\log n)$, память $O(n\log n+\sum k)$; нужен стек глубины $O(n)$.
+\begin{lstlisting}[name=virtual_tree]
+vector<vector<tuple<int, int, int>>> virtual_tree(
+        const vector<vector<int>>& graph, const vector<vector<int>>& groups) {
+    int n = graph.size(), levels = 1, timer = 0;
+    while ((1LL << levels) <= n) ++levels;
+    vector<vector<int>> up(levels, vector<int>(n));
+    vector<int> tin(n), tout(n), depth(n);
+    auto dfs = [&](auto&& self, int vertex, int parent) -> void {
+        tin[vertex] = timer++;
+        up[0][vertex] = parent;
+        for (int level = 1; level < levels; ++level)
+            up[level][vertex] = up[level-1][up[level-1][vertex]];
+        for (int child : graph[vertex]) if (child != parent) {
+            depth[child] = depth[vertex]+1; self(self, child, vertex);
+        }
+        tout[vertex] = timer;
+    };
+    dfs(dfs, 0, 0);
+    auto ancestor = [&](int a, int b) { return tin[a] <= tin[b] && tin[b] < tout[a]; };
+    auto lca = [&](int a, int b) {
+        if (ancestor(a, b)) return a;
+        for (int level = levels-1; level >= 0; --level)
+            if (!ancestor(up[level][a], b)) a = up[level][a];
+        return up[0][a];
+    };
+    auto byEntry = [&](int a, int b) { return tin[a] < tin[b]; };
+    vector<vector<tuple<int, int, int>>> answer;
+    for (auto vertices : groups) {
+        sort(vertices.begin(), vertices.end(), byEntry);
+        vertices.erase(unique(vertices.begin(), vertices.end()), vertices.end());
+        int count = vertices.size();
+        for (int i = 1; i < count; ++i) vertices.push_back(lca(vertices[i-1], vertices[i]));
+        sort(vertices.begin(), vertices.end(), byEntry);
+        vertices.erase(unique(vertices.begin(), vertices.end()), vertices.end());
+        vector<int> stack;
+        vector<tuple<int, int, int>> edges;
+        for (int vertex : vertices) {
+            while (!stack.empty() && !ancestor(stack.back(), vertex)) stack.pop_back();
+            if (!stack.empty()) edges.emplace_back(stack.back(), vertex,
+                                                   depth[vertex]-depth[stack.back()]);
+            stack.push_back(vertex);
+        }
+        answer.push_back(move(edges));
+    }
+    return answer;
+}
+\end{lstlisting}
+% Для каждого набора важных вершин возвращает рёбра $(parent,child,length)$
+% минимального замкнутого по LCA дерева. Вершины сохраняют исходные номера;
+% рёбра направлены от предка к потомку, длина --- число исходных рёбер.
+% Повторы во входном наборе удаляются; пустой и одноэлементный наборы дают
+% пустой список рёбер. Корень непустого результата --- единственная вершина
+% без входящего ребра; для одноэлементного набора это его единственная вершина.
+% Предобработка $O(n\log n)$, набор размера $k$ обрабатывается за
+% $O(k\log(k+1)+k\log n)$, память $O(n\log n+\sum k)$.
+%
+% Предобработку можно вынести наружу для потоков наборов. На виртуальном
+% дереве удобно считать попарные расстояния и делать ДП по важным вершинам.
+
+\iffalse
+\section{Перекорневое динамическое программирование: суммы расстояний}
+Для неориентированного невзвешенного дерева возвращает суммы расстояний от каждой вершины до остальных; пустой вход допустим.
+Время и память $O(n)$; все суммы помещаются в \texttt{ll}, нужен стек глубины $O(n)$.
+\begin{lstlisting}[name=reroot_distances]
+vector<ll> reroot_distances(const vector<vector<int>>& graph) {
+    int n = graph.size();
+    if (!n) return {};
+    vector<int> size(n, 1);
+    vector<ll> answer(n);
+    auto down = [&](auto&& self, int vertex, int parent) -> void {
+        for (int child : graph[vertex]) if (child != parent) {
+            self(self, child, vertex);
+            size[vertex] += size[child];
+            answer[vertex] += answer[child] + size[child];
+        }
+    };
+    auto up = [&](auto&& self, int vertex, int parent) -> void {
+        for (int child : graph[vertex]) if (child != parent) {
+            answer[child] = answer[vertex] + n - 2LL*size[child];
+            self(self, child, vertex);
+        }
+    };
+    down(down, 0, -1); up(up, 0, -1);
+    return answer;
+}
+\end{lstlisting}
+% Для каждой вершины возвращает сумму расстояний до всех остальных в
+% невзвешенном дереве. При переносе корня через ребро сумма меняется на
+% $n-2\,size[child]$. Время и память $O(n)$; пустой граф допустим.
+% Суммы и промежуточные результаты помещаются в \texttt{ll}.
+%
+% Для весов рёбер изменение умножается на вес. Для произвольной ДП
+% используют префиксы и суффиксы вкладов соседей.
+
+\fi
+\iffalse
+\section{Метод мешка: различные цвета в поддереве}
+Для неориентированного дерева с корнем 0 и массива цветов длины $n$ возвращает число различных цветов в каждом поддереве.
+Цвета имеют тип \texttt{ll}; пустые дерево и массив допустимы одновременно.
+Время $O(n\log n)$, память $O(n)$, нужен стек глубины $O(n)$.
+\begin{lstlisting}[name=dsu_on_tree]
+vector<int> dsu_on_tree(const vector<vector<int>>& graph, const vector<ll>& colors) {
+    int n = graph.size();
+    if (!n) return {};
+    vector<ll> coordinates = colors;
+    sort(coordinates.begin(), coordinates.end());
+    coordinates.erase(unique(coordinates.begin(), coordinates.end()), coordinates.end());
+    vector<int> color(n), size(n, 1), heavy(n, -1), tin(n), tout(n), order;
+    for (int i = 0; i < n; ++i)
+        color[i] = lower_bound(coordinates.begin(), coordinates.end(), colors[i])
+                 - coordinates.begin();
+    auto prepare = [&](auto&& self, int vertex, int parent) -> void {
+        tin[vertex] = order.size(); order.push_back(vertex);
+        for (int child : graph[vertex]) if (child != parent) {
+            self(self, child, vertex); size[vertex] += size[child];
+            if (heavy[vertex] == -1 || size[child] > size[heavy[vertex]]) heavy[vertex] = child;
+        }
+        tout[vertex] = order.size();
+    };
+    prepare(prepare, 0, -1);
+    vector<int> frequency(coordinates.size()), answer(n);
+    int distinct = 0;
+    auto change = [&](int left, int right, int delta) {
+        for (int i = left; i < right; ++i) {
+            int& count = frequency[color[order[i]]];
+            if (count == 0) ++distinct;
+            count += delta;
+            if (count == 0) --distinct;
+        }
+    };
+    auto solve = [&](auto&& self, int vertex, int parent, bool keep) -> void {
+        for (int child : graph[vertex])
+            if (child != parent && child != heavy[vertex]) self(self, child, vertex, false);
+        if (heavy[vertex] != -1) self(self, heavy[vertex], vertex, true);
+        for (int child : graph[vertex])
+            if (child != parent && child != heavy[vertex]) change(tin[child], tout[child], 1);
+        change(tin[vertex], tin[vertex]+1, 1);
+        answer[vertex] = distinct;
+        if (!keep) change(tin[vertex], tout[vertex], -1);
+    };
+    solve(solve, 0, -1, true);
+    return answer;
+}
+\end{lstlisting}
+% DSU on tree возвращает число различных цветов в поддереве каждой вершины.
+% Цвета --- произвольные \texttt{ll}, предварительно сжимаются.
+% Содержимое тяжёлого ребёнка сохраняется, лёгкие поддеревья добавляются
+% по эйлеровым интервалам. Время $O(n\log n)$, память $O(n)$.
+% Пустые граф и массив цветов допустимы одновременно.
+%
+% Частоты позволяют поддерживать число цветов с заданной частотой или
+% наиболее частые цвета. В отличие от DSU связности, объединения здесь нет.
+
+\fi
+\iffalse
+\section{Слияние меньшего множества в большее}
+Для неориентированного дерева с корнем 0 и массива цветов длины $n$ возвращает число различных цветов в каждом поддереве, сливая меньшие множества в большие.
+Пустой вход допустим; время $O(n\log^2(n+1))$, память $O(n)$, нужен стек глубины $O(n)$.
+\begin{lstlisting}[name=small_to_large]
+vector<int> small_to_large(const vector<vector<int>>& graph,
+        const vector<ll>& colors) {
+    int n = graph.size();
+    vector<set<ll>> bags(n);
+    vector<int> answer(n);
+    auto dfs = [&](auto&& self, int vertex, int parent) -> void {
+        bags[vertex].insert(colors[vertex]);
+        for (int child : graph[vertex]) if (child != parent) {
+            self(self, child, vertex);
+            if (bags[vertex].size() < bags[child].size()) bags[vertex].swap(bags[child]);
+            bags[vertex].insert(bags[child].begin(), bags[child].end());
+            bags[child].clear();
+        }
+        answer[vertex] = bags[vertex].size();
+    };
+    if (n) dfs(dfs, 0, -1);
+    return answer;
+}
+\end{lstlisting}
+% Альтернативно считает различные цвета каждого поддерева, сливая
+% \texttt{set} детей. Всегда переносится меньшее множество.
+% Время $O(n\log^2(n+1))$, память $O(n)$; массив цветов имеет длину $n$.
+% Пустой граф допустим. Дубликаты не мешают оценке: исчезающие элементы
+% оплачивают одно слияние, а выжившие перемещения --- удвоением размера
+% либо исчезновением сопоставимых элементов.
+%
+% Словарь частот заменяет множество для более богатой статистики.
+% Хеш-таблица часто быстрее, но даёт только ожидаемые оценки и требует
+% аккуратного выбора хеша на враждебном входе.
+
+\fi
+\section{Эйлеров порядок и интервалы поддеревьев}
+Для неориентированного дерева с корнем 0 возвращает $(tin,tout,order)$: поддерево $v$ занимает $[tin[v],tout[v])$, \texttt{order[tin[v]]=v}.
+Это порядок входов, не полный эйлеров обход для LCA; пустой вход допустим.
+Время и память $O(n)$, рекурсии нет.
+\begin{lstlisting}[name=euler_subtree]
+tuple<vector<int>, vector<int>, vector<int>> euler_subtree(
+        const vector<vector<int>>& graph) {
+    int n = graph.size();
+    vector<int> tin(n), tout(n), order;
+    if (!n) return {tin, tout, order};
+    vector<array<int, 3>> stack{{0, -1, 0}};
+    while (!stack.empty()) {
+        auto [vertex, parent, exit] = stack.back(); stack.pop_back();
+        if (exit) { tout[vertex] = order.size(); continue; }
+        tin[vertex] = order.size(); order.push_back(vertex);
+        stack.push_back({vertex, parent, 1});
+        for (auto it = graph[vertex].rbegin(); it != graph[vertex].rend(); ++it)
+            if (*it != parent) stack.push_back({*it, vertex, 0});
+    }
+    return {tin, tout, order};
+}
+\end{lstlisting}
+% Возвращает $(tin,tout,order)$: поддерево вершины $v$ занимает
+% $[tin[v],tout[v])$, а \texttt{order[tin[v]]=v}.
+% Время и память $O(n)$, обход итеративный и не требует рекурсивного стека.
+% Пустой граф допустим. Это порядок входов, а не полный эйлеров обход для LCA.
+%
+% Дерево Фенвика поверх порядка даёт суммы поддеревьев. Для динамического
+% изменения топологии нужны другие структуры, например деревья эйлерова тура.
+
+\iffalse
+\section{Изоморфизм неукоренённых деревьев}
+Для двух неориентированных деревьев без меток возвращает признак точного изоморфизма без вероятностных хешей; два пустых дерева изоморфны.
+Время $O(n\log(n+1))$, память $O(n)$, нужен стек глубины $O(n)$.
+\begin{lstlisting}[name=tree_isomorphism]
+bool tree_isomorphism(const vector<vector<int>>& first,
+        const vector<vector<int>>& second) {
+    if (first.size() != second.size()) return false;
+    if (first.empty()) return true;
+    auto centers = [&](const vector<vector<int>>& graph) {
+        int n = graph.size(), remaining = n;
+        vector<int> degree(n), leaves;
+        for (int i = 0; i < n; ++i) {
+            degree[i] = graph[i].size();
+            if (degree[i] <= 1) leaves.push_back(i);
+        }
+        while (remaining > 2) {
+            remaining -= leaves.size();
+            vector<int> next;
+            for (int vertex : leaves)
+                for (int child : graph[vertex]) if (--degree[child] == 1) next.push_back(child);
+            leaves = move(next);
+        }
+        return leaves;
+    };
+    map<vector<int>, int> identifiers;
+    auto encode = [&](auto&& self, const vector<vector<int>>& graph,
+                      int vertex, int parent) -> int {
+        vector<int> children;
+        for (int child : graph[vertex]) if (child != parent)
+            children.push_back(self(self, graph, child, vertex));
+        sort(children.begin(), children.end());
+        int next = identifiers.size();
+        return identifiers.emplace(move(children), next).first->second;
+    };
+    auto a = centers(first), b = centers(second);
+    if (a.size() != b.size()) return false;
+    int signature = encode(encode, first, a[0], -1);
+    for (int root : b) if (signature == encode(encode, second, root, -1)) return true;
+    return false;
+}
+\end{lstlisting}
+% Проверяет точный изоморфизм без меток и без вероятностных хешей.
+% Канонические номера присваиваются отсортированным спискам номеров детей
+% в общем для обоих деревьев словаре. Проверяются один или два центра.
+% Оба пустых дерева изоморфны. Время $O(n\log(n+1))$, память $O(n)$:
+% суммарная длина ключей словаря линейна, а сравнения списков учитывают
+% их длины; центров не больше двух. Рекурсия может иметь глубину $O(n)$.
+%
+% Для деревьев с метками включите метку вершины в ключ. Для восстановления
+% биекции сопоставляйте детей с одинаковыми каноническими номерами.
+
+\fi
+\iffalse
+\section{Центры и центроиды дерева}
+Для неориентированного невзвешенного дерева возвращает пару отсортированных списков: центры минимизируют максимальное расстояние, центроиды оставляют после удаления компоненты размера $\le n/2$.
+Каждый список содержит не больше двух вершин; пустой вход допустим.
+Время и память $O(n)$, рекурсии нет.
+\begin{lstlisting}[name=tree_centers]
+pair<vector<int>, vector<int>> tree_centers(const vector<vector<int>>& graph) {
+    int n = graph.size();
+    if (!n) return {{}, {}};
+    vector<int> parent(n, -1), order{0}, size(n, 1), degree(n), centers, centroids;
+    for (int i = 0; i < n; ++i) {
+        int vertex = order[i];
+        for (int child : graph[vertex]) if (child != parent[vertex]) {
+            parent[child] = vertex; order.push_back(child);
+        }
+        degree[i] = graph[i].size();
+        if (degree[i] <= 1) centers.push_back(i);
+    }
+    for (int i = n-1; i >= 0; --i) {
+        int vertex = order[i], largest = n-size[vertex];
+        for (int child : graph[vertex]) if (parent[child] == vertex)
+            largest = max(largest, size[child]);
+        if (largest <= n/2) centroids.push_back(vertex);
+        if (parent[vertex] != -1) size[parent[vertex]] += size[vertex];
+    }
+    int remaining = n;
+    while (remaining > 2) {
+        remaining -= centers.size();
+        vector<int> next;
+        for (int vertex : centers)
+            for (int child : graph[vertex]) if (--degree[child] == 1) next.push_back(child);
+        centers = move(next);
+    }
+    sort(centers.begin(), centers.end()); sort(centroids.begin(), centroids.end());
+    return {centers, centroids};
+}
+\end{lstlisting}
+% Возвращает пару отсортированных списков: центры минимизируют максимальное
+% расстояние до других вершин, центроиды оставляют после удаления компоненты
+% размера не больше $n/2$. Это разные понятия; каждого типа вершин не больше
+% двух. Время и память $O(n)$, обходы итеративные; пустое дерево допустимо.
+%
+% Центры также являются серединой диаметра. Взвешенные расстояния требуют
+% другого поиска центра, а взвешенные размеры --- адаптации критерия центроида.
+
+\fi

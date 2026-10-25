@@ -1,0 +1,563 @@
+\clearpage
+\section{Двойной полиномиальный хеш подстрок}
+По строке и запросам $\{l,r,u,v\}$ сравнивает подстроки $[l,r)$ и $[u,v)$, возвращая логические ответы в порядке запросов.
+Индексы должны быть корректны, размеры --- помещаться в \texttt{int}; пустые подстроки допустимы, предобработка занимает $O(n)$, запрос $O(1)$, память $O(n+q)$.
+Два фиксированных хеша могут совпасть у разных подстрок, особенно на специально подобранном входе; для точного подтверждения равенства сравните сами подстроки.
+\begin{lstlisting}[name=supplement_hash]
+vector<bool> substring_equal(const string& text,
+        const vector<array<int, 4>>& queries) {
+    int n = int(text.size());
+    const array<ll, 2> modulus{1000000007, 1000000009};
+    const ll base = 911382323;
+    vector<array<ll, 2>> prefix(n + 1), power(n + 1);
+    power[0] = {1, 1};
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < 2; ++j) {
+            power[i + 1][j] = power[i][j] * base % modulus[j];
+            prefix[i + 1][j] = (prefix[i][j] * base
+                + (unsigned char)text[i] + 1) % modulus[j];
+        }
+    auto hash = [&](int left, int right, int j) {
+        return (prefix[right][j] - prefix[left][j]
+            * power[right - left][j] % modulus[j] + modulus[j]) % modulus[j];
+    };
+    vector<bool> answer;
+    for (auto [left, right, otherLeft, otherRight] : queries) {
+        bool equal = right - left == otherRight - otherLeft;
+        for (int j = 0; j < 2; ++j)
+            equal = equal && hash(left, right, j) == hash(otherLeft, otherRight, j);
+        answer.push_back(equal);
+    }
+    return answer;
+}
+\end{lstlisting}
+% Пакет сравнений подстрок одной строки: запрос $\{l,r,u,v\}$ сравнивает
+% $[l,r)$ и $[u,v)$. Индексы корректны, пустые подстроки допустимы.
+% Предобработка $O(n)$, запрос $O(1)$, память $O(n+q)$ вместе с ответами.
+% Здесь и далее нужны стандартный командный шаблон, \texttt{std},
+% \texttt{ll = long long}, \texttt{db = double}; размеры помещаются в \texttt{int}.
+% Листинги независимы, кроме явно передаваемых результатов других алгоритмов.
+% Все реализации в этом файле авторские, не скопированы из внешних источников;
+% ссылки указывают материалы об алгоритмах, а не происхождение кода.
+% Байты кодируются числами от 1 до 256. Одинаковые длины и два остатка
+% не гарантируют равенство: коллизии возможны даже при двух модулях.
+% Основание фиксировано, поэтому вероятностной гарантии против специально
+% подобранного входа нет. Для точного ответа требуется сравнить сами подстроки.
+%
+% Вызов: \texttt{substring\_equal("ababa", \{\{0,3,2,5\}\})} даёт
+% \texttt{\{true\}}. Для разных строк нужны одинаковые основание и модули.
+% Случайное основание усложняет подбор коллизий, но не устраняет их.
+% Материал: \url{https://cp-algorithms.com/string/string-hashing.html}.
+
+\clearpage
+
+\iffalse
+\section{Бор: пакет вставок и точных поисков}
+\subsection*{Для чего нужен}
+Операция $\{0,s\}$ вставляет слово, $\{1,s\}$ возвращает число его вставок,
+а не число слов с таким префиксом. Ответы выдаются только для поисков.
+Алфавит --- строчные латинские буквы; пустое слово и повторы допустимы.
+Время $O(L+q)$, память $O(26L+q)$, где $L$ --- суммарная длина операций.
+Число вставок одного слова помещается в \texttt{int}.
+\subsection*{Реализация}
+Неверный тип операции или символ приводит к \texttt{invalid\_argument}.
+\begin{lstlisting}[name=supplement_trie]
+vector<int> trie_batch(const vector<pair<int, string>>& operations) {
+    struct Node {
+        array<int, 26> next;
+        int count = 0;
+        Node() { next.fill(-1); }
+    };
+    vector<Node> nodes(1);
+    vector<int> answer;
+    for (const auto& [type, word] : operations) {
+        if (type != 0 && type != 1) throw invalid_argument("Тип операции");
+        for (char symbol : word)
+            if (symbol < 'a' || symbol > 'z')
+                throw invalid_argument("Символ вне алфавита");
+        int vertex = 0;
+        for (char symbol : word) {
+            int letter = symbol - 'a';
+            if (nodes[vertex].next[letter] == -1 && type == 0) {
+                int next = int(nodes.size());
+                nodes[vertex].next[letter] = next;
+                nodes.emplace_back();
+            }
+            vertex = nodes[vertex].next[letter];
+            if (vertex == -1) break;
+        }
+        if (type == 0) ++nodes[vertex].count;
+        else answer.push_back(vertex == -1 ? 0 : nodes[vertex].count);
+    }
+    return answer;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{trie\_batch(\{\{0,"ab"\},\{1,"a"\},\{1,"ab"\}\})}
+даёт \texttt{\{0,1\}}. Для подсчёта префиксов нужен отдельный счётчик
+проходящих слов, для удаления --- проверка наличия и уменьшение счётчиков.
+Материал: \url{https://en.wikipedia.org/wiki/Trie}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Поиск Кнута---Морриса---Пратта}
+\subsection*{Для чего нужен}
+Все начальные позиции вхождений шаблона в текст, включая перекрывающиеся,
+за $O(n+m)$ времени и $O(m+k)$ памяти с ответом. Любые байты допустимы:
+разделитель между строками не используется. Пустой шаблон встречается
+на всех $n+1$ границах; это число должно помещаться в \texttt{int}.
+\subsection*{Реализация}
+Префикс-функция уже есть в основном разделе; здесь самостоятельный поиск.
+\begin{lstlisting}[name=supplement_kmp]
+vector<int> kmp_search(const string& text, const string& pattern) {
+    int n = int(text.size()), m = int(pattern.size());
+    if (m == 0) {
+        vector<int> answer(n + 1);
+        iota(answer.begin(), answer.end(), 0);
+        return answer;
+    }
+    vector<int> prefix(m), answer;
+    for (int i = 1, matched = 0; i < m; ++i) {
+        while (matched && pattern[i] != pattern[matched])
+            matched = prefix[matched - 1];
+        if (pattern[i] == pattern[matched]) ++matched;
+        prefix[i] = matched;
+    }
+    int matched = 0;
+    for (int i = 0; i < n; ++i) {
+        while (matched && text[i] != pattern[matched])
+            matched = prefix[matched - 1];
+        if (text[i] == pattern[matched]) ++matched;
+        if (matched == m) {
+            answer.push_back(i - m + 1);
+            matched = prefix[matched - 1];
+        }
+    }
+    return answer;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{kmp\_search("aaaa", "aa")} даёт \texttt{\{0,1,2\}}.
+Для потокового текста сохраняют длину совпавшего префикса между порциями.
+Материал: \url{https://cp-algorithms.com/string/prefix-function.html}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Комплексное быстрое преобразование Фурье и свёртка}
+\subsection*{Для чего нужен}
+Умножение целочисленных полиномов; коэффициенты идут от младшей степени.
+Пустой множитель даёт пустой результат, иначе длина равна $a+b-1$,
+включая конечные нули. Время $O(N\log N)$, память $O(N)$,
+$N$ --- ближайшая степень двойки не меньше длины результата.
+\subsection*{Реализация}
+\texttt{fft} принимает непустой массив длины --- степени двойки;
+\texttt{inverse=true} выполняет обратное преобразование с делением на длину.
+Длина дополнения должна помещаться в положительный \texttt{int}.
+Округление в \texttt{ll} допустимо только для представимого результата.
+\begin{lstlisting}[name=supplement_fft]
+void fft(vector<complex<db>>& values, bool inverse) {
+    int n = int(values.size());
+    for (int i = 1, j = 0; i < n; ++i) {
+        int bit = n / 2;
+        while (j & bit) { j ^= bit; bit /= 2; }
+        j ^= bit;
+        if (i < j) swap(values[i], values[j]);
+    }
+    for (int length = 2; length <= n; ) {
+        db angle = 2 * acos(db(-1)) / length * (inverse ? -1 : 1);
+        complex<db> root(cos(angle), sin(angle));
+        for (int start = 0; start < n; start += length) {
+            complex<db> factor(1, 0);
+            for (int j = 0; j < length / 2; ++j) {
+                auto first = values[start + j];
+                auto second = values[start + j + length / 2] * factor;
+                values[start + j] = first + second;
+                values[start + j + length / 2] = first - second;
+                factor *= root;
+            }
+        }
+        if (length == n) break;
+        length *= 2;
+    }
+    if (inverse) for (auto& value : values) value /= n;
+}
+vector<ll> fft_convolution(const vector<int>& first, const vector<int>& second) {
+    if (first.empty() || second.empty()) return {};
+    int size = int(first.size()) + int(second.size()) - 1, n = 1;
+    while (n < size) n *= 2;
+    vector<complex<db>> a(n), b(n);
+    for (int i = 0; i < int(first.size()); ++i) a[i] = first[i];
+    for (int i = 0; i < int(second.size()); ++i) b[i] = second[i];
+    fft(a, false); fft(b, false);
+    for (int i = 0; i < n; ++i) a[i] *= b[i];
+    fft(a, true);
+    vector<ll> answer(size);
+    for (int i = 0; i < size; ++i) answer[i] = llround(a[i].real());
+    return answer;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{fft\_convolution(\{1,2\},\{3,-1\})} даёт \texttt{\{3,5,-2\}}.
+Это приближённый алгоритм: общего обещания точности для больших
+коэффициентов и длин нет, даже если ответ помещается в \texttt{ll}.
+При необходимости точности используйте уже имеющееся преобразование по
+простому модулю, а для целых --- несколько модулей с восстановлением.
+Материал: \url{https://cp-algorithms.com/algebra/fft.html}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Производная и интеграл полинома по простому модулю}
+\subsection*{Для чего нужен}
+Возвращает пару: производная и первообразная с нулевой константой.
+Коэффициенты от младшей степени нормализуются в $[0,p)$.
+Вход длины $n<p$, $p$ --- простой, $2\le p\le 2\cdot10^9$.
+Время и память $O(n)$; пустой полином даёт \texttt{\{\},\{0\}}.
+\subsection*{Реализация}
+Простоту модуля проверяет вызывающий; ограничение длины исключает
+деление на ноль в поле. Нули в конце не удаляются.
+\begin{lstlisting}[name=supplement_calculus]
+pair<vector<int>, vector<int>> polynomial_calculus(const vector<int>& a, int p) {
+    int n = int(a.size());
+    if (p < 2 || p > 2000000000 || n >= p)
+        throw invalid_argument("Модуль или длина полинома");
+    vector<int> derivative(max(0, n - 1)), integral(n + 1), inverse(n + 1);
+    if (n) inverse[1] = 1;
+    for (int i = 2; i <= n; ++i)
+        inverse[i] = int(p - ll(p / i) * inverse[p % i] % p);
+    for (int i = 0; i < n; ++i) {
+        ll value = (ll(a[i]) % p + p) % p;
+        if (i) derivative[i - 1] = int(value * i % p);
+        integral[i + 1] = int(value * inverse[i + 1] % p);
+    }
+    return {derivative, integral};
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{polynomial\_calculus(\{2,3,4\},7)} даёт
+\texttt{\{3,1\},\{0,2,5,6\}}. Эти операции входят в алгоритмы
+логарифма и экспоненты формальных рядов; обратный ряд уже реализован отдельно.
+Материал: \url{https://cp-algorithms.com/algebra/polynomial.html}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Вершина с заданным номером на пути дерева}
+\subsection*{Для чего нужен}
+Запрос $\{u,v,k\}$ возвращает вершину с номером $k$ на пути от $u$ к $v$,
+нумерация с нуля; при $k<0$ или выходе за путь возвращает $-1$.
+Вход --- непустое связное неориентированное дерево, корень и вершины
+запросов корректны. Предобработка $O(n\log n)$, запрос $O(\log n)$,
+память $O(n\log n+q)$. Обход итеративный.
+\subsection*{Реализация}
+Общий предок вычисляется здесь же двоичными подъёмами: зависимости
+от листинга основного раздела нет.
+\begin{lstlisting}[name=supplement_kth_path]
+vector<int> kth_path_vertex(const vector<vector<int>>& graph,
+        const vector<array<int, 3>>& queries, int root = 0) {
+    int n = int(graph.size()), levels = 1;
+    while ((1LL << levels) <= n) ++levels;
+    vector<vector<int>> up(levels, vector<int>(n, root));
+    vector<int> depth(n), parent(n, -1), order{root};
+    parent[root] = root;
+    for (int i = 0; i < n; ++i) {
+        int vertex = order[i];
+        for (int next : graph[vertex]) if (parent[next] == -1) {
+            parent[next] = vertex; depth[next] = depth[vertex] + 1;
+            order.push_back(next);
+        }
+    }
+    up[0] = parent;
+    for (int j = 1; j < levels; ++j)
+        for (int v = 0; v < n; ++v) up[j][v] = up[j - 1][up[j - 1][v]];
+    auto lift = [&](int v, int distance) {
+        for (int j = 0; j < levels; ++j)
+            if ((distance >> j) & 1) v = up[j][v];
+        return v;
+    };
+    auto ancestor = [&](int u, int v) {
+        if (depth[u] < depth[v]) swap(u, v);
+        u = lift(u, depth[u] - depth[v]);
+        if (u == v) return u;
+        for (int j = levels - 1; j >= 0; --j)
+            if (up[j][u] != up[j][v]) { u = up[j][u]; v = up[j][v]; }
+        return up[0][u];
+    };
+    vector<int> answer;
+    for (auto [u, v, k] : queries) {
+        int common = ancestor(u, v), first = depth[u] - depth[common];
+        ll length = ll(first) + depth[v] - depth[common];
+        if (k < 0 || k > length) answer.push_back(-1);
+        else answer.push_back(k <= first ? lift(u, k) : lift(v, int(length - k)));
+    }
+    return answer;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{kth\_path\_vertex(\{\{1\},\{0,2\},\{1\}\},\{\{2,0,1\}\})}
+даёт \texttt{\{1\}}. Взвешенная длина пути --- другая задача:
+номер вершины здесь считает рёбра, а не вес.
+Материал: \url{https://cp-algorithms.com/graph/lca_binary_lifting.html}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Ближайшая отмеченная вершина через дерево центроидов}
+\subsection*{Для чего нужен}
+Дополнение к имеющемуся построению центроидной декомпозиции, не повторяет его.
+Передайте дерево и \texttt{parent = centroid\_decomposition(graph)}.
+Операция $\{0,v\}$ отмечает вершину навсегда, $\{1,v\}$ запрашивает
+расстояние до ближайшей отмеченной; до первой отметки ответ $-1$.
+Повторные отметки допустимы. Ответы только для запросов.
+Дерево непустое, родители и вершины корректны.
+Предобработка и память $O(n\log n)$, операция $O(\log n)$, плюс память ответов.
+\subsection*{Реализация}
+Центроиды обходятся от корня: уже закрытые центроиды отделяют компоненты,
+внутри каждой сохраняются расстояния до её центра. Рекурсии нет.
+\begin{lstlisting}[name=supplement_centroid_queries]
+vector<int> nearest_marked(const vector<vector<int>>& graph,
+        const vector<int>& parent, const vector<pair<int, int>>& operations) {
+    int n = int(graph.size()), root = -1;
+    vector<vector<int>> children(n);
+    for (int v = 0; v < n; ++v) {
+        if (parent[v] == -1) root = v;
+        else children[parent[v]].push_back(v);
+    }
+    vector<vector<pair<int, int>>> ancestors(n);
+    vector<bool> closed(n);
+    vector<int> order{root};
+    for (int index = 0; index < n; ++index) {
+        int center = order[index];
+        vector<array<int, 3>> stack{{center, -1, 0}};
+        while (!stack.empty()) {
+            auto [v, previous, distance] = stack.back(); stack.pop_back();
+            ancestors[v].push_back({center, distance});
+            for (int next : graph[v])
+                if (next != previous && !closed[next])
+                    stack.push_back({next, v, distance + 1});
+        }
+        closed[center] = true;
+        for (int child : children[center]) order.push_back(child);
+    }
+    vector<int> best(n, -1), answer;
+    for (auto [type, v] : operations) {
+        if (type != 0 && type != 1) throw invalid_argument("Тип операции");
+        ll result = LLONG_MAX;
+        for (auto [center, distance] : ancestors[v]) {
+            if (type == 0) {
+                if (best[center] == -1 || distance < best[center])
+                    best[center] = distance;
+            } else if (best[center] != -1)
+                result = min(result, ll(best[center]) + distance);
+        }
+        if (type == 1) answer.push_back(result == LLONG_MAX ? -1 : int(result));
+    }
+    return answer;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{nearest\_marked(\{\{1\},\{0\}\},\{1,-1\},\{\{1,0\},\{0,1\},\{1,0\}\})}
+даёт \texttt{\{-1,1\}}. Для снятия отметок одного минимума недостаточно:
+нужны контейнеры расстояний с удалением для каждого центроида.
+Материал: \url{https://cp-algorithms.com/graph/centroid_decomposition.html}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Детерминированная стресс-проверка случайных графов}
+\subsection*{Для чего нужен}
+Генерирует простые неориентированные графы без петель и вызывает
+\texttt{compare(graph)}. Функция сравнения запускает решение и эталон,
+возвращая \texttt{true} при совпадении. Первый контрпример возвращается
+как \texttt{optional<vector<vector<int>>>}; \texttt{nullopt} означает,
+что заданное число проверок не выявило расхождения, а не доказало правильность.
+\subsection*{Реализация}
+Одинаковые параметры и начальное значение дают одинаковую последовательность:
+используются непосредственно результаты стандартного \texttt{mt19937}.
+Размер выбирается от нуля до \texttt{maxVertices}; вероятность ребра
+приблизительно \texttt{density/1000} (остаток даёт небольшое смещение).
+Время генерации $O(t\cdot n^2)$ плюс вызовы сравнения, память $O(n^2)$.
+\begin{lstlisting}[name=supplement_stress]
+optional<vector<vector<int>>> stress_graphs(int rounds, int maxVertices,
+        int density, int seed,
+        const function<bool(const vector<vector<int>>&)>& compare) {
+    if (rounds < 0 || maxVertices < 0 || maxVertices == INT_MAX
+            || density < 0 || density > 1000 || !compare)
+        throw invalid_argument("Параметры стресс-проверки");
+    mt19937 random(seed);
+    auto generate = [&]() {
+        int n = int(random() % (maxVertices + 1));
+        vector<vector<int>> graph(n);
+        for (int u = 0; u < n; ++u)
+            for (int v = u + 1; v < n; ++v)
+                if (int(random() % 1000) < density) {
+                    graph[u].push_back(v); graph[v].push_back(u);
+                }
+        return graph;
+    };
+    for (int round = 0; round < rounds; ++round) {
+        auto graph = generate();
+        if (!compare(graph)) return graph;
+    }
+    return nullopt;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Пример сравнения со своим медленным эталоном:
+\texttt{stress\_graphs(1000,8,350,42,[\&](const auto\& g)\{return fast(g)==slow(g);\})}.
+Возвращённый граф можно сохранить и минимизировать отдельно. Деревья,
+ориентированные графы, веса и несвязность с особыми условиями требуют
+другого генератора. Методика --- дифференциальное тестирование;
+материал: \url{https://en.wikipedia.org/wiki/Differential_testing}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Событийное сканирование: длины покрытия интервалами}
+\subsection*{Для чего нужен}
+По полуоткрытым интервалам $[l,r)$ возвращает массив:
+\texttt{length[k]} --- суммарная длина, покрытая ровно $k$ интервалами,
+для $k\ge1$. \texttt{length[0]=0}: бесконечное внешнее дополнение не считается.
+Пустые интервалы игнорируются; $l>r$ --- ошибка.
+Все координаты и разность крайней правой и левой помещаются в \texttt{ll}.
+Время $O(n\log n)$, память $O(n)$, размер результата $n+1$.
+\subsection*{Реализация}
+Все события одной координаты обрабатываются вместе: касания и пустые
+интервалы не создают фиктивных участков положительной длины.
+\begin{lstlisting}[name=supplement_sweep]
+vector<ll> interval_coverage(const vector<pair<ll, ll>>& intervals) {
+    vector<pair<ll, int>> events;
+    for (auto [left, right] : intervals) {
+        if (left > right) throw invalid_argument("Перевёрнутый интервал");
+        if (left == right) continue;
+        events.push_back({left, 1}); events.push_back({right, -1});
+    }
+    sort(events.begin(), events.end());
+    vector<ll> length(intervals.size() + 1);
+    if (events.empty()) return length;
+    ll previous = events[0].first;
+    int active = 0, i = 0;
+    while (i < int(events.size())) {
+        ll coordinate = events[i].first;
+        if (active) length[active] += coordinate - previous;
+        while (i < int(events.size()) && events[i].first == coordinate)
+            active += events[i++].second;
+        previous = coordinate;
+    }
+    return length;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{interval\_coverage(\{\{0,3\},\{2,5\}\})} даёт
+\texttt{\{0,4,1\}}; сумма положительных элементов --- длина объединения.
+Для закрытых целочисленных отрезков сначала переходят к $[l,r+1)$,
+если прибавление единицы представимо.
+Материал: \url{https://cp-algorithms.com/geometry/length-of-segments-union.html}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Бинарный поиск ответа: минимальная грузоподъёмность}
+\subsection*{Для чего нужен}
+Доставить последовательность неотрицательных весов за не более чем
+\texttt{days} дней; за день берётся непрерывный очередной префикс оставшихся
+грузов, менять порядок и делить груз нельзя. Возвращает минимальную
+грузоподъёмность. Сумма весов должна помещаться в \texttt{ll}; пустой список
+даёт ноль. Число дней положительно, иначе ошибка.
+Время $O(n\log(S+1))$ для $S>0$, при $S=0$ --- $O(n)$; память $O(1)$.
+\subsection*{Реализация}
+Жадная проверка заполняет день максимально и минимизирует число дней.
+Вычитание вместо сложения защищает проверку вместимости от переполнения.
+\begin{lstlisting}[name=supplement_shipping]
+ll minimum_shipping_capacity(const vector<ll>& weights, int days) {
+    if (days <= 0) throw invalid_argument("Число дней должно быть положительным");
+    ll low = 0, high = 0;
+    for (ll weight : weights) {
+        if (weight < 0 || weight > LLONG_MAX - high)
+            throw invalid_argument("Вес или сумма вне диапазона");
+        low = max(low, weight); high += weight;
+    }
+    auto feasible = [&](ll capacity) {
+        int used = 1;
+        ll load = 0;
+        for (ll weight : weights) {
+            if (weight > capacity - load) {
+                if (used == days) return false;
+                ++used; load = 0;
+            }
+            load += weight;
+        }
+        return true;
+    };
+    while (low < high) {
+        ll middle = low + (high - low) / 2;
+        if (feasible(middle)) high = middle;
+        else low = middle + 1;
+    }
+    return low;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{minimum\_shipping\_capacity(\{1,2,3,4,5\},3)} даёт \texttt{6}.
+Здесь \texttt{high} всегда допустим, а ответ лежит в замкнутом
+\texttt{[low,high]}; функция осуществимости монотонна по вместимости.
+Материал: \url{https://cp-algorithms.com/num_methods/binary_search.html}.
+
+\clearpage
+
+\fi
+\iffalse
+\section{Таблицы Паскаля, Каталана, Стирлинга и Белла}
+\subsection*{Для чего нужен}
+Для $0\le i\le n$ возвращает кортеж \texttt{choose, catalan, stirling, bell}:
+$C(i,j)$; число правильных скобочных последовательностей из $i$ пар;
+число разбиений $i$ элементов на $j$ непустых неразличимых блоков
+(Стирлинг второго рода); число всех разбиений $i$ элементов.
+Модуль $2\le p\le2\cdot10^9$ может быть составным, $n<p$ не требуется.
+Время и память $O(n^2)$. Это совместная табличная альтернатива;
+быстрые биномиальные коэффициенты через факториалы уже есть в другом разделе.
+\subsection*{Реализация}
+Все четыре пустых объекта имеют число вариантов один.
+\begin{lstlisting}[name=supplement_combinatorics]
+auto combinatorial_tables(int n, int p) {
+    if (n < 0 || n == INT_MAX || p < 2 || p > 2000000000)
+        throw invalid_argument("Размер или модуль таблиц");
+    vector<vector<int>> choose(n + 1, vector<int>(n + 1));
+    vector<vector<int>> stirling = choose;
+    vector<int> catalan(n + 1), bell(n + 1);
+    choose[0][0] = stirling[0][0] = catalan[0] = bell[0] = 1;
+    for (int i = 1; i <= n; ++i) {
+        choose[i][0] = 1;
+        for (int j = 1; j <= i; ++j) {
+            choose[i][j] = int((ll(choose[i - 1][j - 1]) + choose[i - 1][j]) % p);
+            stirling[i][j] = int((stirling[i - 1][j - 1]
+                + ll(j) * stirling[i - 1][j]) % p);
+            bell[i] = int((ll(bell[i]) + stirling[i][j]) % p);
+        }
+        for (int left = 0; left < i; ++left)
+            catalan[i] = int((catalan[i] + ll(catalan[left])
+                * catalan[i - 1 - left]) % p);
+    }
+    return make_tuple(choose, catalan, stirling, bell);
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Вызов: \texttt{auto [c,cat,s,b] = combinatorial\_tables(4,1000);}
+даёт \texttt{c[4][2]=6}, \texttt{cat[4]=14}, \texttt{s[4][2]=7},
+\texttt{b[4]=15}. Если нужны только последние строки, память таблиц
+можно сократить до $O(n)$; деление по модулю здесь не используется.
+Материалы: \url{https://cp-algorithms.com/combinatorics/binomial-coefficients.html},
+\url{https://cp-algorithms.com/combinatorics/catalan-numbers.html},
+\url{https://en.wikipedia.org/wiki/Stirling_numbers_of_the_second_kind}.
+
+\fi

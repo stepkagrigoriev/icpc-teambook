@@ -1,0 +1,819 @@
+\section{Divide and conquer DP: монотонный argmin}
+По матрице стоимостей $c[l][r]$ размера $(n+1)^2$ и $0\le k\le n$ вычисляет минимальные стоимости разбиения префиксов на ровно $k$ непустых частей.
+Возвращает весь последний слой DP; недостижимые состояния равны $\texttt{LLONG\_MAX}/4$, все конечные стоимости и суммы должны лежать строго между минус и плюс этой границей.
+Самый левый оптимальный разрез обязан не убывать с правой границей на каждом слое; это условие не проверяется.
+Время $O(kn\log n)$, дополнительная память $O(n)$ сверх входной матрицы.
+\begin{lstlisting}[name=optimization_dc]
+vector<ll> divideConquerDP(const vector<vector<ll>>& cost, int k) {
+    int n = (int)cost.size() - 1;
+    assert(n >= 0 && k >= 0 && k <= n);
+    for (const auto& row : cost) assert((int)row.size() == n + 1);
+    ll inf = LLONG_MAX / 4;
+    vector<ll> previous(n + 1, inf), current(n + 1, inf);
+    previous[0] = 0;
+    for (int layer = 1; layer <= k; ++layer) {
+        fill(current.begin(), current.end(), inf);
+        auto solve = [&](auto&& self, int left, int right,
+                         int optLeft, int optRight) -> void {
+            if (left > right) return;
+            int middle = (left + right) / 2, best = optLeft;
+            for (int split = optLeft; split <= min(optRight, middle - 1); ++split) {
+                if (previous[split] == inf) continue;
+                ll value = previous[split] + cost[split][middle];
+                if (value < current[middle]) {
+                    current[middle] = value;
+                    best = split;
+                }
+            }
+            self(self, left, middle - 1, optLeft, best);
+            self(self, middle + 1, right, best, optRight);
+        };
+        solve(solve, layer, n, layer - 1, n - 1);
+        previous.swap(current);
+    }
+    return previous;
+}
+\end{lstlisting}
+% Пакетный расчёт $dp_t[r]=\min_{t-1\le l<r}(dp_{t-1}[l]+c[l][r])$
+% для разбиения $[0,n)$ ровно на $k$ непустых частей. Матрица $(n+1)^2$;
+% используется только $l<r$. Требуется неубывание самого левого оптимального
+% $l$ по $r$ на каждом слое (например, из неравенства Монжа).
+% Время $O(kn\log n)$, дополнительная память $O(n)$, вход $O(n^2)$.
+% Возвращает весь последний слой; недостижимые состояния равны
+% $\texttt{LLONG\_MAX}/4$. Все конечные стоимости и суммы должны лежать строго
+% между минус и плюс этим числом; монотонность является предусловием, не проверяется.
+%
+% Матрица удобна для пакетного API, но её хранение часто дороже самого DP.
+% Без доказанной монотонности сужать диапазон переходов нельзя.
+% Источник метода: \url{https://cp-algorithms.com/dynamic_programming/divide-and-conquer-dp.html}.
+
+\section{Оптимизация Кнута: слияние соседних отрезков}
+По массиву неотрицательных весов возвращает минимальную стоимость их слияния в один блок: объединять можно только соседние блоки, цена равна сумме их весов.
+Пустой массив даёт $0$; все суммы и стоимости должны помещаться в $[0,\texttt{LLONG\_MAX}/4)$, отрицательные веса недопустимы.
+Время и память $O(n^2)$.
+\begin{lstlisting}[name=optimization_knuth]
+ll knuthMerge(const vector<ll>& weights) {
+    int n = (int)weights.size();
+    if (n == 0) return 0;
+    vector<ll> prefix(n + 1);
+    for (int i = 0; i < n; ++i) {
+        assert(weights[i] >= 0);
+        prefix[i + 1] = prefix[i] + weights[i];
+    }
+    vector<vector<ll>> dp(n, vector<ll>(n));
+    vector<vector<int>> opt(n, vector<int>(n));
+    for (int i = 0; i < n; ++i) opt[i][i] = i;
+    for (int length = 2; length <= n; ++length) {
+        for (int l = 0; l + length <= n; ++l) {
+            int r = l + length - 1;
+            dp[l][r] = LLONG_MAX / 4;
+            for (int s = opt[l][r - 1]; s <= min(r - 1, opt[l + 1][r]); ++s) {
+                ll value = dp[l][s] + dp[s + 1][r] + prefix[r + 1] - prefix[l];
+                if (value < dp[l][r]) { dp[l][r] = value; opt[l][r] = s; }
+            }
+        }
+    }
+    return dp[0][n - 1];
+}
+\end{lstlisting}
+% Минимальная стоимость слияния неотрицательных весов: слияние двух соседних
+% блоков стоит сумму весов объединения. $dp[l][r]=w(l,r)+
+% \min_{l\le s<r}(dp[l][s]+dp[s+1][r])$, $dp[i][i]=0$.
+% Время и память $O(n^2)$.
+% Для общего интервального DP достаточны $w(b,c)\le w(a,d)$ и
+% $w(a,c)+w(b,d)\le w(a,d)+w(b,c)$ при $a\le b\le c\le d$.
+% Тогда $opt[l][r-1]\le opt[l][r]\le opt[l+1][r]$ при согласованном выборе
+% самого левого минимума. Здесь первое условие даёт неотрицательность,
+% второе выполняется с равенством. Все суммы и стоимости помещаются в
+% $[0,\texttt{LLONG\_MAX}/4)$.
+%
+% Отрицательные веса не поддерживаются. Источник условий:
+% \url{https://cp-algorithms.com/dynamic_programming/knuth-optimization.html}.
+
+\iffalse
+\section{Монотонная convex hull trick}
+По непустому пакету прямых $(m,b)$ и запросам $x$ возвращает минимумы $mx+b$ в порядке запросов.
+Наклоны должны идти по невозрастанию, запросы --- по неубыванию; равные наклоны допустимы.
+Все разности коэффициентов, произведения разностей, $mx$ и $mx+b$ должны помещаться в \texttt{ll}, не только конечный ответ.
+Время $O(n+q)$, память $O(n+q)$.
+\begin{lstlisting}[name=optimization_cht]
+vector<ll> monotoneCHT(const vector<pair<ll, ll>>& lines, const vector<ll>& queries) {
+    assert(!lines.empty());
+    vector<pair<ll, ll>> hull;
+    for (int i = 0; i < (int)lines.size(); ++i) {
+        auto line = lines[i];
+        if (i) assert(lines[i - 1].first >= line.first);
+        if (!hull.empty() && hull.back().first == line.first) {
+            if (hull.back().second <= line.second) continue;
+            hull.pop_back();
+        }
+        while (hull.size() >= 2) {
+            auto a = hull[hull.size() - 2], b = hull.back();
+            if ((b.second - a.second) * (b.first - line.first) <
+                (line.second - b.second) * (a.first - b.first)) break;
+            hull.pop_back();
+        }
+        hull.push_back(line);
+    }
+    vector<ll> result;
+    int position = 0;
+    auto value = [&](int i, ll x) { return hull[i].first * x + hull[i].second; };
+    for (int i = 0; i < (int)queries.size(); ++i) {
+        if (i) assert(queries[i - 1] <= queries[i]);
+        while (position + 1 < (int)hull.size() &&
+               value(position + 1, queries[i]) <= value(position, queries[i])) ++position;
+        result.push_back(value(position, queries[i]));
+    }
+    return result;
+}
+\end{lstlisting}
+\fi
+
+% Для пакета прямых $(m,b)$ с невозрастающими $m$ и запросов с
+% неубывающими $x$ возвращает $\min(mx+b)$. Время $O(n+q)$, память $O(n+q)$.
+% Все разности коэффициентов, произведения разностей в проверке выпуклости,
+% а также $mx$ и $mx+b$ должны помещаться в signed \texttt{ll}.
+% Это обязательный контракт, а не защита от переполнения; ограничения только
+% на конечный ответ недостаточно. Равные наклоны оставляют меньший свободный член.
+%
+% Для произвольного порядка запросов нужен двоичный поиск по оболочке;
+% для произвольного порядка вставок этот алгоритм не подходит.
+% Источник: \url{https://wcipeg.com/wiki/Convex_hull_trick}.
+
+\iffalse
+\section{Aliens trick на полном ациклическом графе}
+\subsection*{Для чего нужен}
+Вершины $0,\ldots,n$, ребро $i\to j$ для каждого $i<j$ стоит $c[i][j]$.
+Первая функция возвращает пару (стоимость со штрафом за каждое ребро,
+число рёбер), выбирая меньшее число при равенстве. Вторая ищет стоимость
+пути ровно с $k$ рёбрами за $O(n^2\log(2B+1))$, память $O(n)$ сверх матрицы.
+\subsection*{Реализация}
+Для второй функции обязательно: $F(t)$ --- минимальная исходная стоимость
+пути с $t$ рёбрами --- дискретно выпукла:
+$F(t+1)-F(t)\ge F(t)-F(t-1)$. Все $1\le t\le n$ достижимы.
+Целый $B\ge1$ строго больше модулей всех соседних разностей $F$.
+Число рёбер при росте штрафа убывает; ищется первый целый штраф с числом
+не больше $k$. Выпуклость и целочисленные стоимости гарантируют
+$F(k)=G(p)-pk$, даже если оптимальное число перескочило через $k$.
+Без выпуклости получится лишь нижняя выпуклая оболочка, не точный ответ.
+Все стоимости, штрафы, промежуточные суммы, $2B$ и $pk$ по модулю меньше
+$\texttt{LLONG\_MAX}/4$. Свойства $F$ и граница $B$ --- предусловия.
+\begin{lstlisting}[name=optimization_aliens]
+pair<ll, int> penalizedDag(const vector<vector<ll>>& cost, ll penalty) {
+    int n = (int)cost.size() - 1;
+    assert(n >= 1);
+    for (const auto& row : cost) assert((int)row.size() == n + 1);
+    vector<pair<ll, int>> dp(n + 1, {LLONG_MAX / 4, INT_MAX});
+    dp[0] = {0, 0};
+    for (int j = 1; j <= n; ++j)
+        for (int i = 0; i < j; ++i)
+            dp[j] = min(dp[j], pair<ll, int>{dp[i].first + cost[i][j] + penalty,
+                                            dp[i].second + 1});
+    return dp[n];
+}
+ll exactDagEdges(const vector<vector<ll>>& cost, int k, ll bound) {
+    int n = (int)cost.size() - 1;
+    assert(k >= 1 && k <= n && bound >= 1 && bound < LLONG_MAX / 8);
+    ll left = -bound, right = bound;
+    assert(penalizedDag(cost, left).second == n);
+    assert(penalizedDag(cost, right).second == 1);
+    while (left < right) {
+        ll middle = left + (right - left) / 2;
+        if (penalizedDag(cost, middle).second <= k) right = middle;
+        else left = middle + 1;
+    }
+    return penalizedDag(cost, left).first - left * k;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Матрица делает задачу конкретной и позволяет отдельно проверить штрафной DP.
+Для максимизации соответствующее условие --- вогнутость оптимума по числу
+выбранных объектов. Источник идеи лагранжевой релаксации:
+\url{https://usaco.guide/adv/lagrange}.
+
+
+\fi
+\iffalse
+\section{SOS: subset и superset zeta}
+По массиву длины $2^b$ возвращает суммы по подмаскам либо надмаскам каждой маски.
+Флаг \texttt{inverse} выполняет обратное преобразование Мёбиуса; все промежуточные суммы должны помещаться в \texttt{ll}.
+Время $O(b2^b)$, память $O(2^b)$ для возвращаемого массива.
+\begin{lstlisting}[name=optimization_sos]
+vector<ll> subsetZeta(vector<ll> values, bool inverse = false) {
+    int size = (int)values.size();
+    assert(size > 0 && (size & (size - 1)) == 0);
+    for (int bit = 1; bit < size; bit *= 2)
+        for (int mask = 0; mask < size; ++mask)
+            if (mask & bit) values[mask] += inverse ? -values[mask ^ bit] : values[mask ^ bit];
+    return values;
+}
+vector<ll> supersetZeta(vector<ll> values, bool inverse = false) {
+    int size = (int)values.size();
+    assert(size > 0 && (size & (size - 1)) == 0);
+    for (int bit = 1; bit < size; bit *= 2)
+        for (int mask = 0; mask < size; ++mask)
+            if (!(mask & bit)) values[mask] += inverse ? -values[mask | bit] : values[mask | bit];
+    return values;
+}
+\end{lstlisting}
+\fi
+
+% Преобразует массив размера $2^b$ в суммы по подмаскам либо надмаскам;
+% флаг inverse выполняет обратное преобразование Мёбиуса. $O(b2^b)$ времени,
+% $O(2^b)$ памяти для возвращаемого массива. Все промежуточные суммы помещаются в \texttt{ll}.
+%
+% Для сумм по модулю нужно нормализовать каждое обновление.
+% Источник: \url{https://usaco.guide/plat/dp-sos}.
+
+\iffalse
+\section{Перебор подмасок и надмасок}
+Перечисляет подмаски заданной маски в убывающем порядке, включая ноль, либо надмаски внутри $b$ бит в возрастающем порядке.
+Маска неотрицательна; для надмасок нужны $0\le b\le30$ и $mask<2^b$, а размер возвращаемого списка должен быть практически допустимым.
+Время и память равны размеру ответа; перебор подмасок всех $b$-битных масок суммарно занимает $O(3^b)$.
+\begin{lstlisting}[name=optimization_masks]
+vector<int> submasks(int mask) {
+    assert(mask >= 0);
+    vector<int> result;
+    for (int sub = mask;; sub = (sub - 1) & mask) {
+        result.push_back(sub);
+        if (sub == 0) break;
+    }
+    return result;
+}
+vector<int> supermasks(int mask, int bits) {
+    assert(bits >= 0 && bits <= 30 && mask >= 0 && mask < (1 << bits));
+    int full = (1 << bits) - 1;
+    vector<int> result;
+    for (int super = mask;; super = (super + 1) | mask) {
+        result.push_back(super);
+        if (super == full) break;
+    }
+    return result;
+}
+\end{lstlisting}
+\fi
+
+% Возвращает все подмаски в убывающем порядке, включая ноль, либо все
+% надмаски внутри $b$ бит в возрастающем порядке. Время и память равны
+% размеру ответа; суммарный перебор подмасок всех масок стоит $O(3^b)$.
+% $0\le b\le30$, $0\le mask<2^b$. Размер результата должен быть практически допустимым.
+%
+% При обработке на месте можно не сохранять результат.
+% Источник: \url{https://cp-algorithms.com/algebra/all-submasks.html}.
+
+\iffalse
+\section{Профильное DP: домино на прямоугольнике}
+\subsection*{Для чего нужен}
+Число покрытий пустого $h\times w$ домино $1\times2$, по модулю
+$1\le modulus\le10^9$. Ширина профиля $\min(h,w)\le15$.
+Время $O(\max(h,w)\,4^{\min(h,w)})$ как грубая верхняя оценка,
+память $O(2^{\min(h,w)}+\min(h,w))$.
+\subsection*{Реализация}
+Маска отмечает клетки текущей строки, уже занятые вертикальным домино сверху.
+\begin{lstlisting}[name=optimization_domino]
+ll dominoTilings(int h, int w, ll modulus) {
+    assert(h >= 0 && w >= 0 && modulus >= 1 && modulus <= 1000000000);
+    if (w > h) swap(h, w);
+    assert(w <= 15);
+    vector<ll> dp(1 << w), next(1 << w);
+    dp[0] = 1 % modulus;
+    for (int row = 0; row < h; ++row) {
+        fill(next.begin(), next.end(), 0);
+        for (int mask = 0; mask < (1 << w); ++mask) {
+            if (!dp[mask]) continue;
+            auto fillRow = [&](auto&& self, int column, int outgoing) -> void {
+                if (column == w) {
+                    next[outgoing] = (next[outgoing] + dp[mask]) % modulus;
+                    return;
+                }
+                if (mask & (1 << column)) { self(self, column + 1, outgoing); return; }
+                if (row + 1 < h) self(self, column + 1, outgoing | (1 << column));
+                if (column + 1 < w && !(mask & (1 << (column + 1))))
+                    self(self, column + 2, outgoing);
+            };
+            fillRow(fillRow, 0, 0);
+        }
+        dp.swap(next);
+    }
+    return dp[0];
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Переходы можно предвычислить; препятствия требуют отдельной маски строки.
+Источник: \url{https://cp-algorithms.com/dynamic_programming/profile-dynamics.html}.
+
+
+\fi
+\iffalse
+\section{Subset sum через bitset}
+\subsection*{Для чего нужен}
+Достижимость суммы $0\le target\le200000$ для неотрицательных целых весов.
+Пустое подмножество разрешено. Память $O(L)$ бит при локальном $L=200001$;
+на обычной реализации время $O(nL/\text{размер машинного слова})$.
+\subsection*{Реализация}
+\begin{lstlisting}[name=optimization_bitset]
+bool bitsetSubsetSum(const vector<int>& weights, int target) {
+    constexpr int limit = 200001;
+    assert(target >= 0 && target < limit);
+    bitset<limit> reachable;
+    reachable[0] = true;
+    for (int weight : weights) {
+        assert(weight >= 0);
+        if (weight <= target) reachable |= reachable << weight;
+    }
+    return reachable[target];
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Граница зашита локально; отрицательные веса этим API не поддерживаются.
+Источник: \url{https://usaco.guide/plat/bitsets}.
+
+
+\fi
+\iffalse
+\section{CDQ: трёхмерное доминирование}
+\subsection*{Для чего нужен}
+Для каждой точки $(x,y,z)$ считает другие точки с координатами не больше её.
+Совпадающие точки считаются разными объектами. $O(n\log^2 n)$ времени,
+$O(n)$ памяти; координаты типа \texttt{ll}, ответ тоже \texttt{ll}.
+\subsection*{Реализация}
+Лексикографическая сортировка задаёт порядок по первой координате;
+дубликаты объединяются с весом. На слиянии CDQ Fenwick считает третью координату.
+\begin{lstlisting}[name=optimization_cdq]
+vector<ll> dominance3D(const vector<array<ll, 3>>& points) {
+    struct Point { ll x, y, z, count, answer; int rank; };
+    int n = (int)points.size();
+    vector<int> order(n);
+    iota(order.begin(), order.end(), 0);
+    sort(order.begin(), order.end(), [&](int a, int b) { return points[a] < points[b]; });
+    vector<Point> data;
+    vector<int> group(n);
+    vector<ll> coordinates;
+    for (int id : order) {
+        auto p = points[id];
+        if (data.empty() || array<ll, 3>{data.back().x, data.back().y, data.back().z} != p)
+            data.push_back({p[0], p[1], p[2], 0, 0, 0});
+        ++data.back().count;
+        group[id] = (int)data.size() - 1;
+        coordinates.push_back(p[2]);
+    }
+    sort(coordinates.begin(), coordinates.end());
+    coordinates.erase(unique(coordinates.begin(), coordinates.end()), coordinates.end());
+    for (auto& p : data)
+        p.rank = (int)(lower_bound(coordinates.begin(), coordinates.end(), p.z) - coordinates.begin()) + 1;
+    vector<ll> tree(coordinates.size() + 1);
+    auto add = [&](int position, ll value) {
+        for (; position < (int)tree.size(); position += position & -position) tree[position] += value;
+    };
+    auto sum = [&](int position) {
+        ll result = 0;
+        for (; position; position -= position & -position) result += tree[position];
+        return result;
+    };
+    auto solve = [&](auto&& self, int l, int r) -> void {
+        if (r - l <= 1) return;
+        int middle = (l + r) / 2;
+        self(self, l, middle); self(self, middle, r);
+        vector<int> left, right;
+        for (int i = l; i < middle; ++i) left.push_back(i);
+        for (int i = middle; i < r; ++i) right.push_back(i);
+        auto byY = [&](int a, int b) { return data[a].y < data[b].y; };
+        sort(left.begin(), left.end(), byY); sort(right.begin(), right.end(), byY);
+        int used = 0;
+        for (int id : right) {
+            while (used < (int)left.size() && data[left[used]].y <= data[id].y) {
+                int from = left[used++];
+                add(data[from].rank, data[from].count);
+            }
+            data[id].answer += sum(data[id].rank);
+        }
+        for (int i = 0; i < used; ++i) add(data[left[i]].rank, -data[left[i]].count);
+    };
+    solve(solve, 0, (int)data.size());
+    vector<ll> result(n);
+    for (int i = 0; i < n; ++i) result[i] = data[group[i]].answer + data[group[i]].count - 1;
+    return result;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Слияние уже отсортированных по $y$ половин убирает повторную сортировку,
+но Fenwick всё равно оставляет $O(n\log^2n)$.
+Источник метода: \url{https://oi-wiki.org/ds/cdq-divide/}.
+
+
+\fi
+\iffalse
+\section{Meet in the middle: subset sum}
+\subsection*{Для чего нужен}
+Число подмножеств с заданной суммой при $n\le40$, включая пустое.
+Допускаются отрицательные веса. Все промежуточные суммы и разности
+помещаются в \texttt{ll}. Время $O(n2^{n/2})$, память $O(2^{n/2})$.
+\subsection*{Реализация}
+\begin{lstlisting}[name=optimization_mitm]
+ll meetSubsetSum(const vector<ll>& weights, ll target) {
+    int n = (int)weights.size();
+    assert(n <= 40);
+    auto sums = [&](int l, int r) {
+        vector<ll> result{0};
+        for (int i = l; i < r; ++i) {
+            int size = (int)result.size();
+            for (int j = 0; j < size; ++j) result.push_back(result[j] + weights[i]);
+        }
+        return result;
+    };
+    auto left = sums(0, n / 2), right = sums(n / 2, n);
+    sort(right.begin(), right.end());
+    ll answer = 0;
+    for (ll value : left) {
+        auto range = equal_range(right.begin(), right.end(), target - value);
+        answer += range.second - range.first;
+    }
+    return answer;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+После сортировки обеих половин пары можно считать двумя указателями.
+Источник: \url{https://usaco.guide/gold/meet-in-the-middle}.
+
+
+\fi
+\iffalse
+\section{Мо с изменениями: число различных}
+Обрабатывает пакет операций над массивом: $\{0,l,r\}$ запрашивает число различных значений на $[l,r)$, $\{1,p,x\}$ присваивает $a[p]=x$.
+Возвращает ответы на запросы в исходном порядке; индексы должны быть корректны, значения сжимаются автоматически.
+При $n,q,u$ одного порядка время $O((n+q+u)^{5/3})$, память $O(n+q+u)$.
+\begin{lstlisting}[name=optimization_mo]
+vector<int> moDistinctUpdates(vector<int> initial, const vector<array<int, 3>>& operations) {
+    struct Update { int position, before, after; };
+    struct Query { int left, right, time, id; };
+    int n = (int)initial.size();
+    vector<int> values = initial;
+    for (auto op : operations) {
+        assert(op[0] == 0 || op[0] == 1);
+        if (op[0] == 1) values.push_back(op[2]);
+    }
+    sort(values.begin(), values.end());
+    values.erase(unique(values.begin(), values.end()), values.end());
+    auto rank = [&](int x) { return (int)(lower_bound(values.begin(), values.end(), x) - values.begin()); };
+    for (int& x : initial) x = rank(x);
+    vector<int> current = initial;
+    vector<Update> updates;
+    vector<Query> queries;
+    for (auto op : operations) {
+        if (op[0] == 1) {
+            assert(op[1] >= 0 && op[1] < n);
+            int after = rank(op[2]);
+            updates.push_back({op[1], current[op[1]], after});
+            current[op[1]] = after;
+        } else {
+            assert(op[1] >= 0 && op[1] <= op[2] && op[2] <= n);
+            queries.push_back({op[1], op[2], (int)updates.size(), (int)queries.size()});
+        }
+    }
+    int block = max(1, (int)pow(max(1, n), 2.0 / 3));
+    sort(queries.begin(), queries.end(), [&](const Query& a, const Query& b) {
+        return tuple{a.left / block, a.right / block, a.time} <
+               tuple{b.left / block, b.right / block, b.time};
+    });
+    current = initial;
+    vector<int> frequency(values.size()), result(queries.size());
+    int left = 0, right = 0, time = 0, distinct = 0;
+    auto add = [&](int p) { if (frequency[current[p]]++ == 0) ++distinct; };
+    auto remove = [&](int p) { if (--frequency[current[p]] == 0) --distinct; };
+    auto apply = [&](int index, bool forward) {
+        auto update = updates[index];
+        int p = update.position;
+        if (left <= p && p < right) remove(p);
+        current[p] = forward ? update.after : update.before;
+        if (left <= p && p < right) add(p);
+    };
+    for (auto query : queries) {
+        while (time < query.time) { apply(time, true); ++time; }
+        while (time > query.time) { --time; apply(time, false); }
+        while (left > query.left) add(--left);
+        while (right < query.right) add(right++);
+        while (left < query.left) remove(left++);
+        while (right > query.right) remove(--right);
+        result[query.id] = distinct;
+    }
+    return result;
+}
+\end{lstlisting}
+\fi
+
+% Пакет операций над массивом: $\{0,l,r\}$ --- запрос на $[l,r)$,
+% $\{1,p,x\}$ --- присваивание $a[p]=x$. Возвращает ответы в исходном порядке.
+% Координаты значений сжимаются. При $n,q,u$ одного порядка время
+% $O((n+q+u)^{5/3})$, память $O(n+q+u)$.
+% При общем числе запросов $q$, обновлений $u$ и блоке $B\approx n^{2/3}$
+% верхняя оценка перемещений $O(qB+n^2/B+un^2/B^2)$ плюс сортировка.
+%
+% Без обновлений предпочтителен обычный Мо с блоком $\sqrt n$.
+% Источник базового метода: \url{https://cp-algorithms.com/data_structures/sqrt_decomposition.html}.
+
+\iffalse
+\section{Шпраг--Гранди на DAG}
+По графу переходов конечной беспристрастной игры вычисляет число Гранди каждой вершины; игрок без доступного хода проигрывает.
+Граф обязан быть ациклическим, иначе выбрасывается исключение; для суммы независимых игр позиция проигрышна тогда и только тогда, когда XOR чисел Гранди равен нулю.
+Время и память $O(n+m)$.
+\begin{lstlisting}[name=optimization_grundy]
+vector<int> dagGrundy(const vector<vector<int>>& graph) {
+    int n = (int)graph.size();
+    vector<vector<int>> reverse(n);
+    vector<int> remaining(n), grundy(n);
+    queue<int> ready;
+    for (int v = 0; v < n; ++v) {
+        remaining[v] = (int)graph[v].size();
+        if (!remaining[v]) ready.push(v);
+        for (int to : graph[v]) { assert(to >= 0 && to < n); reverse[to].push_back(v); }
+    }
+    int processed = 0;
+    while (!ready.empty()) {
+        int v = ready.front(); ready.pop(); ++processed;
+        vector<int> seen(graph[v].size() + 1);
+        for (int to : graph[v])
+            if (grundy[to] < (int)seen.size()) seen[grundy[to]] = 1;
+        while (grundy[v] < (int)seen.size() && seen[grundy[v]]) ++grundy[v];
+        for (int from : reverse[v]) if (--remaining[from] == 0) ready.push(from);
+    }
+    if (processed != n) throw invalid_argument("game graph has a cycle");
+    return grundy;
+}
+\end{lstlisting}
+\fi
+
+% Числа Гранди конечной беспристрастной игры с нормальным правилом:
+% не имеющий хода проигрывает. Граф должен быть DAG; цикл вызывает исключение.
+% Время $O(n+m)$, память $O(n+m)$. XOR чисел независимых компонентов
+% равен нулю тогда и только тогда, когда позиция проигрышна.
+% Обрабатывает вершины от стоков; mex ограничен исходящей степенью.
+%
+% Для игр с циклами mex по этому алгоритму неприменим.
+% Источник: \url{https://cp-algorithms.com/game_theory/sprague-grundy-nim.html}.
+
+\iffalse
+\section{Мизерный Ним}
+По неотрицательным размерам куч возвращает, выигрывает ли игрок, которому предстоит ход в мизерном Ниме.
+За ход снимают положительное число камней из одной кучи, взявший последний камень проигрывает; пустая позиция считается выигрышной для текущего игрока.
+Время $O(n)$, дополнительная память $O(1)$.
+\begin{lstlisting}[name=optimization_nim]
+bool misereNim(const vector<ll>& heaps) {
+    ll xorSum = 0;
+    int ones = 0;
+    bool large = false;
+    for (ll heap : heaps) {
+        assert(heap >= 0);
+        xorSum ^= heap;
+        ones += heap == 1;
+        large = large || heap > 1;
+    }
+    return large ? xorSum != 0 : ones % 2 == 0;
+}
+\end{lstlisting}
+\fi
+
+% В кучах неотрицательное число камней; ход снимает положительное число
+% из одной кучи. Взявший последний камень проигрывает. Возвращает выигрышность,
+% $O(n)$ времени, $O(1)$ памяти. Пустая позиция считается выигрышной для
+% игрока, которому предстоит ход: предыдущий уже взял последний камень.
+%
+% При наличии большой кучи критерий совпадает с обычным Нимом, но
+% выигрышный ход должен учитывать переход к одним единицам.
+% Источник: \url{https://en.wikipedia.org/wiki/Nim#Mis%C3%A8re_game}.
+
+\iffalse
+\section{Адаптивный Симпсон для интеграла полинома}
+\subsection*{Для чего нужен}
+Интегрирует $f(x)=\sum c_i x^i$ на конечном $[a,b]$, $a\le b$.
+Конкретный API не требует дописывать callback. Возвращает
+(оценка интеграла, сумма оценок ошибки, все листья прошли критерий).
+Глубина ограничена $0\le depth\le30$; худшее время $O(d2^{depth})$,
+стек $O(depth)$ для $d$ коэффициентов.
+\subsection*{Реализация}
+Локальная оценка $|S_{left}+S_{right}-S|/15$ --- асимптотическая, не строгая
+граница ошибки: возможны алиасинг, округление и случайное совпадение оценок.
+Флаг false означает исчерпание глубины либо невозможность разделить интервал;
+true тоже не доказывает абсолютную ошибку $\le\varepsilon$.
+Все вычисляемые значения должны оставаться конечными.
+\begin{lstlisting}[name=optimization_simpson]
+tuple<db, db, bool> adaptivePolynomialIntegral(const vector<db>& coefficients,
+                                               db a, db b, db epsilon, int depth) {
+    assert(isfinite(a) && isfinite(b) && a <= b && isfinite(epsilon) && epsilon > 0);
+    assert(depth >= 0 && depth <= 30);
+    for (db c : coefficients) assert(isfinite(c));
+    auto value = [&](db x) {
+        db result = 0;
+        for (int i = (int)coefficients.size() - 1; i >= 0; --i) result = result * x + coefficients[i];
+        return result;
+    };
+    if (a == b) return {0, 0, true};
+    auto solve = [&](auto&& self, db l, db r, db fl, db fm, db fr,
+                     db whole, db tolerance, int remaining) -> tuple<db, db, bool> {
+        db m = midpoint(l, r), lm = midpoint(l, m), rm = midpoint(m, r);
+        if (lm == l || lm == m || rm == m || rm == r)
+            return {whole, numeric_limits<db>::infinity(), false};
+        db fLeft = value(lm), fRight = value(rm);
+        db left = (m - l) / 6 * (fl + 4 * fLeft + fm);
+        db right = (r - m) / 6 * (fm + 4 * fRight + fr);
+        db delta = left + right - whole, error = abs(delta) / 15;
+        if (error <= tolerance || remaining == 0)
+            return {left + right + delta / 15, error, error <= tolerance};
+        auto [lv, le, lok] = self(self, l, m, fl, fLeft, fm, left, tolerance / 2, remaining - 1);
+        auto [rv, re, rok] = self(self, m, r, fm, fRight, fr, right, tolerance / 2, remaining - 1);
+        return {lv + rv, le + re, lok && rok};
+    };
+    db fa = value(a), fm = value(midpoint(a, b)), fb = value(b);
+    return solve(solve, a, b, fa, fm, fb, (b - a) / 6 * (fa + 4 * fm + fb), epsilon, depth);
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Для полинома известна первообразная; здесь он служит конкретной задачей
+для полноценного алгоритма интегрирования. Строгая сертификация требует
+интервальной арифметики или априорных оценок производных.
+Источник: \url{https://en.wikipedia.org/wiki/Adaptive_Simpson%27s_method}.
+
+
+\fi
+\iffalse
+\section{Ньютон с сохранением скобки: корень полинома}
+\subsection*{Для чего нужен}
+Ищет корень полинома $\sum c_i x^i$ на скобке $[a,b]$ с разными знаками
+на концах (либо нулём на конце). Возвращает (приближение, достигнута ширина
+$\le2\varepsilon$ или вычисленный ноль). Не требует монотонности, но функция
+непрерывна. Время $O(d\cdot iterations)$, память $O(1)$.
+\subsection*{Реализация}
+Шаг Ньютона принимается только в центральной половине скобки; иначе
+бисекция. Поэтому скобка сжимается хотя бы в $3/4$ за шаг в точной арифметике.
+Все вычисления должны быть конечны; флаг и оценка через ширину скобки
+не являются сертификацией при ошибках округления значений полинома.
+\begin{lstlisting}[name=optimization_newton]
+pair<db, bool> bracketedPolynomialRoot(const vector<db>& coefficients,
+                                      db a, db b, db epsilon, int iterations) {
+    assert(isfinite(a) && isfinite(b) && a <= b && isfinite(epsilon) && epsilon > 0 && iterations >= 0);
+    for (db c : coefficients) assert(isfinite(c));
+    auto evaluate = [&](db x) {
+        db value = 0, derivative = 0;
+        for (int i = (int)coefficients.size() - 1; i >= 0; --i) {
+            derivative = derivative * x + value;
+            value = value * x + coefficients[i];
+        }
+        return pair<db, db>{value, derivative};
+    };
+    db fa = evaluate(a).first, fb = evaluate(b).first;
+    if (fa == 0) return {a, true};
+    if (fb == 0) return {b, true};
+    assert(signbit(fa) != signbit(fb));
+    db x = midpoint(a, b);
+    for (int step = 0; step < iterations; ++step) {
+        if ((b - a) / 2 <= epsilon) return {midpoint(a, b), true};
+        auto [fx, derivative] = evaluate(x);
+        if (fx == 0) return {x, true};
+        if (signbit(fx) == signbit(fa)) { a = x; fa = fx; }
+        else b = x;
+        db next = derivative == 0 ? midpoint(a, b) : x - fx / derivative;
+        if (!isfinite(next) || next <= lerp(a, b, 0.25) || next >= lerp(a, b, 0.75))
+            next = midpoint(a, b);
+        x = next;
+    }
+    return {midpoint(a, b), (b - a) / 2 <= epsilon};
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Корень без смены знака этот API не изолирует.
+Источник: \url{https://en.wikipedia.org/wiki/Newton%27s_method}.
+
+
+\fi
+\iffalse
+\section{Золотое сечение: минимум выпуклого полинома}
+\subsection*{Для чего нужен}
+Возвращает (приближение аргумента минимума, половина оставшегося интервала)
+для полинома на $[a,b]$. Предусловие: полином унимодален, в частности
+подходит выпуклый; свойство не проверяется. $O(d\cdot iterations)$ времени,
+$O(1)$ дополнительной памяти. После инициализации одна новая оценка за шаг.
+\subsection*{Реализация}
+При единственном минимуме половина интервала ограничивает ошибку аргумента
+в точной арифметике. Для плато гарантируется близость к некоторому минимуму.
+Все значения должны быть конечны; сравнения подвержены округлению.
+\begin{lstlisting}[name=optimization_golden]
+pair<db, db> goldenPolynomialMinimum(const vector<db>& coefficients,
+                                     db a, db b, int iterations) {
+    assert(isfinite(a) && isfinite(b) && a <= b && iterations >= 0);
+    for (db c : coefficients) assert(isfinite(c));
+    auto value = [&](db x) {
+        db result = 0;
+        for (int i = (int)coefficients.size() - 1; i >= 0; --i) result = result * x + coefficients[i];
+        return result;
+    };
+    db ratio = (sqrt(5.0) - 1) / 2;
+    db x = lerp(a, b, 1 - ratio), y = lerp(a, b, ratio);
+    db fx = value(x), fy = value(y);
+    for (int step = 0; step < iterations; ++step) {
+        if (fx <= fy) {
+            b = y; y = x; fy = fx;
+            x = lerp(a, b, 1 - ratio); fx = value(x);
+        } else {
+            a = x; x = y; fx = fy;
+            y = lerp(a, b, ratio); fy = value(y);
+        }
+    }
+    return {midpoint(a, b), (b - a) / 2};
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+При доступной производной можно искать её ноль; для произвольного
+многомодального полинома золотое сечение не гарантирует глобальный минимум.
+Источник: \url{https://en.wikipedia.org/wiki/Golden-section_search}.
+
+
+\fi
+\iffalse
+\section{Экспоненциальный поиск: lower bound}
+\subsection*{Для чего нужен}
+Ищет первый индекс со значением $\ge target$ в отсортированном массиве,
+либо $n$. Время $O(\log(p+2))$ для ответа $p$, память $O(1)$.
+Размер массива не превосходит \texttt{INT\_MAX}; удвоение защищено от переполнения.
+\subsection*{Реализация}
+\begin{lstlisting}[name=optimization_exponential]
+int exponentialLowerBound(const vector<ll>& values, ll target) {
+    int n = (int)values.size();
+    if (n == 0 || values[0] >= target) return 0;
+    int left = 1, right = 1;
+    while (right < n && values[right] < target) {
+        left = right + 1;
+        right = right > n / 2 ? n : right * 2;
+    }
+    int end = right == n ? n : right + 1;
+    while (left < end) {
+        int middle = left + (end - left) / 2;
+        if (values[middle] >= target) end = middle;
+        else left = middle + 1;
+    }
+    return left;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Особенно полезен, когда ответ близок к началу; для обычного массива
+стандартный lower\_bound часто проще.
+Источник: \url{https://en.wikipedia.org/wiki/Exponential_search}.
+
+
+\fi
+\section{Сканирующая прямая: площадь объединения прямоугольников}
+По прямоугольникам $\{x_1,y_1,x_2,y_2\}$ возвращает площадь их объединения, игнорируя вырожденные прямоугольники.
+Нужны $x_1\le x_2$, $y_1\le y_2$; координаты, все их разности, произведения ширины полосы на покрытую длину и итоговая площадь должны помещаться в \texttt{ll}.
+Время $O(n\log n)$, память $O(n)$.
+\begin{lstlisting}[name=optimization_sweep]
+ll rectangleUnionArea(const vector<array<ll, 4>>& rectangles) {
+    struct Event { ll x, low, high; int delta; };
+    vector<Event> events;
+    vector<ll> ys;
+    for (auto r : rectangles) {
+        assert(r[0] <= r[2] && r[1] <= r[3]);
+        if (r[0] == r[2] || r[1] == r[3]) continue;
+        events.push_back({r[0], r[1], r[3], 1});
+        events.push_back({r[2], r[1], r[3], -1});
+        ys.push_back(r[1]); ys.push_back(r[3]);
+    }
+    if (events.empty()) return 0;
+    sort(ys.begin(), ys.end()); ys.erase(unique(ys.begin(), ys.end()), ys.end());
+    sort(events.begin(), events.end(), [](const Event& a, const Event& b) { return a.x < b.x; });
+    int segments = (int)ys.size() - 1;
+    vector<int> cover(4 * segments);
+    vector<ll> length(4 * segments);
+    auto update = [&](auto&& self, int node, int l, int r, int ql, int qr, int delta) -> void {
+        if (qr <= l || r <= ql) return;
+        int middle = (l + r) / 2;
+        if (ql <= l && r <= qr) cover[node] += delta;
+        else { self(self, node * 2, l, middle, ql, qr, delta);
+               self(self, node * 2 + 1, middle, r, ql, qr, delta); }
+        if (cover[node] > 0) length[node] = ys[r] - ys[l];
+        else length[node] = r - l == 1 ? 0 : length[node * 2] + length[node * 2 + 1];
+    };
+    ll area = 0, previous = events[0].x;
+    int i = 0;
+    while (i < (int)events.size()) {
+        ll x = events[i].x;
+        area += (x - previous) * length[1];
+        while (i < (int)events.size() && events[i].x == x) {
+            auto e = events[i++];
+            int l = (int)(lower_bound(ys.begin(), ys.end(), e.low) - ys.begin());
+            int r = (int)(lower_bound(ys.begin(), ys.end(), e.high) - ys.begin());
+            update(update, 1, 0, segments, l, r, e.delta);
+        }
+        previous = x;
+    }
+    return area;
+}
+\end{lstlisting}
+% Прямоугольники $\{x_1,y_1,x_2,y_2\}$ с $x_1\le x_2$, $y_1\le y_2$;
+% вырожденные игнорируются. Возвращает площадь объединения за $O(n\log n)$,
+% память $O(n)$. Координаты целые \texttt{ll}. Все разности координат,
+% произведения ширины полосы на покрытую длину и площадь помещаются в \texttt{ll}.
+% Дерево хранит число полных покрытий узла и суммарную покрытую длину;
+% события одного $x$ применяются пакетом после добавления предыдущей полосы.
+%
+% Для периметра нужны дополнительные сведения о компонентах покрытия;
+% одной длины недостаточно. Источник общего sweep-подхода:
+% \url{https://www.topcoder.com/thrive/articles/Line%20Sweep%20Algorithms}.
+

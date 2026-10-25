@@ -1,0 +1,636 @@
+\section{Паросочетание: Хопкрофт--Карп}
+\texttt{graph[u]} содержит номера соседей левой вершины среди \texttt{rightCount} правых вершин; возвращает массивы партнёров максимального паросочетания слева и справа, $-1$ означает свободную вершину.
+Доли нумеруются с нуля независимо; пустые доли и кратные рёбра допустимы, $n+1<\texttt{INT\_MAX}$.
+Время $O((V+E)\sqrt{V+1})$, дополнительная память $O(V)$, нужен стек глубины $O(V)$.
+\begin{lstlisting}[name=advanced_graph_hopcroft_karp]
+pair<vector<int>, vector<int>> hopcroft_karp(
+        const vector<vector<int>>& graph, int rightCount) {
+    int n = graph.size();
+    vector<int> left(n, -1), right(rightCount, -1), distance(n), position(n);
+    while (true) {
+        queue<int> queue;
+        fill(distance.begin(), distance.end(), -1);
+        fill(position.begin(), position.end(), 0);
+        for (int u = 0; u < n; ++u)
+            if (left[u] == -1) { distance[u] = 0; queue.push(u); }
+        int shortest = n + 1;
+        while (!queue.empty()) {
+            int u = queue.front(); queue.pop();
+            if (distance[u] >= shortest) continue;
+            for (int v : graph[u]) {
+                int next = right[v];
+                if (next == -1) shortest = distance[u] + 1;
+                else if (distance[next] == -1) {
+                    distance[next] = distance[u] + 1;
+                    queue.push(next);
+                }
+            }
+        }
+        if (shortest == n + 1) break;
+        auto augment = [&](auto&& self, int u) -> bool {
+            for (int& i = position[u]; i < (int)graph[u].size(); ++i) {
+                int v = graph[u][i], next = right[v];
+                if ((next == -1 && distance[u] + 1 == shortest) ||
+                    (next != -1 && distance[next] == distance[u] + 1 &&
+                     self(self, next))) {
+                    left[u] = v; right[v] = u;
+                    return true;
+                }
+            }
+            distance[u] = -1;
+            return false;
+        };
+        for (int u = 0; u < n; ++u)
+            if (left[u] == -1) augment(augment, u);
+    }
+    return {left, right};
+}
+\end{lstlisting}
+% Максимальное паросочетание двудольного графа: \texttt{graph[u]} содержит
+% соседей левой вершины среди \texttt{rightCount} правых вершин.
+% Результат --- пара массивов партнёров слева и справа, $-1$ означает свободную
+% вершину. Пустые доли и кратные рёбра допустимы. Время
+% $O((V+E)\sqrt{V+1})$, память $O(V)$ сверх входа.
+% Все восемь реализаций ниже авторские, не дословные заимствования.
+% Источники алгоритмов: J. Hopcroft, R. Karp, ``An $n^{5/2}$ Algorithm for
+% Maximum Matchings in Bipartite Graphs'' (1973); H. Kuhn, ``The Hungarian
+% Method for the Assignment Problem'' (1955); стандартные алгоритмы
+% последовательных кратчайших путей, Диница, Тарьяна и Краскала.
+% Общие предпосылки: вне листингов подключён \texttt{bits/stdc++.h}, заданы
+% \texttt{using namespace std; using ll = long long; using db = double;}.
+% Индексы, размеры, степени и служебные размеры помещаются в \texttt{int};
+% вершины нумеруются с нуля, концы рёбер корректны. Веса, ёмкости и суммы
+% имеют тип \texttt{ll}. Все выполняемые арифметические операции обязаны
+% помещаться в свой тип; дополнительные ограничения приведены ниже.
+% Рекурсивные лямбды требуют стека глубины $O(V)$ (в динамической связности
+% $O(\log Q)$). Ошибки входа, кроме явно проверяемых, нарушают контракт.
+%
+% По чередующимся путям из свободных левых вершин восстанавливается
+% минимальное вершинное покрытие (теорема Кёнига). Итеративный DFS снимает
+% ограничение на глубину стека. Здесь дополнительно требуется $n+1<\texttt{INT\_MAX}$.
+
+\section{Прямоугольное назначение: венгерский алгоритм}
+Для прямоугольной матрицы стоимостей $n\times m$ возвращает минимальную стоимость назначения каждой строки разному столбцу и номера выбранных столбцов.
+При $n>m$ возвращает \texttt{nullopt}, пустой вход даёт нулевую стоимость; все назначения разрешены, отрицательные стоимости допустимы.
+Требуется $n+1,m+1<\texttt{INT\_MAX}$; вся арифметика помещается в \texttt{ll}, конечные \texttt{slack} и \texttt{delta} меньше \texttt{LLONG\_MAX}.
+Время $O(n^2m)$, дополнительная память $O(n+m)$.
+\begin{lstlisting}[name=advanced_graph_hungarian]
+optional<pair<ll, vector<int>>> hungarian(const vector<vector<ll>>& cost) {
+    int n = cost.size(), m = n == 0 ? 0 : cost[0].size();
+    if (n > m) return nullopt;
+    vector<ll> rowPotential(n + 1), columnPotential(m + 1);
+    vector<int> matched(m + 1), previous(m + 1);
+    for (int row = 1; row <= n; ++row) {
+        matched[0] = row;
+        int column = 0;
+        vector<ll> slack(m + 1, LLONG_MAX);
+        vector<char> used(m + 1);
+        do {
+            used[column] = true;
+            int currentRow = matched[column], nextColumn = -1;
+            ll delta = LLONG_MAX;
+            for (int j = 1; j <= m; ++j) if (!used[j]) {
+                ll reduced = cost[currentRow - 1][j - 1]
+                           - rowPotential[currentRow] - columnPotential[j];
+                if (reduced < slack[j]) {
+                    slack[j] = reduced;
+                    previous[j] = column;
+                }
+                if (slack[j] < delta) { delta = slack[j]; nextColumn = j; }
+            }
+            for (int j = 0; j <= m; ++j) {
+                if (used[j]) {
+                    rowPotential[matched[j]] += delta;
+                    columnPotential[j] -= delta;
+                } else if (slack[j] != LLONG_MAX) slack[j] -= delta;
+            }
+            if (nextColumn == -1)
+                throw logic_error("no free column");
+            column = nextColumn;
+        } while (matched[column] != 0);
+        do {
+            int nextColumn = previous[column];
+            matched[column] = matched[nextColumn];
+            column = nextColumn;
+        } while (column != 0);
+    }
+    vector<int> assignment(n);
+    for (int j = 1; j <= m; ++j)
+        if (matched[j] != 0) assignment[matched[j] - 1] = j - 1;
+    ll total = 0;
+    for (int i = 0; i < n; ++i) total += cost[i][assignment[i]];
+    return pair{total, assignment};
+}
+\end{lstlisting}
+% Минимальная стоимость назначения каждой из $n$ строк разному столбцу
+% матрицы $n\times m$, $n\le m$. Все назначения разрешены, стоимости могут
+% быть отрицательными. Возвращаются стоимость и выбранный столбец каждой
+% строки; при $n>m$ --- \texttt{nullopt}, пустая матрица даёт нулевую стоимость.
+% Время $O(n^2m)$, память $O(n+m)$ сверх матрицы.
+% Матрица прямоугольная. Требуется $n+1,m+1<\texttt{INT\_MAX}$.
+% Все приведённые стоимости, потенциалы и промежуточные разности помещаются
+% в \texttt{ll}; конечные значения \texttt{slack} и \texttt{delta} строго
+% меньше \texttt{LLONG\_MAX}. Итоговая сумма также помещается в \texttt{ll}.
+% Бесконечность не заменяет запрещённое назначение.
+%
+% При $n>m$ можно транспонировать задачу, если требуется покрыть меньшую
+% долю. Для разреженных разрешённых назначений удобнее поток минимальной
+% стоимости; для максимизации нужно безопасно изменить знак стоимостей.
+
+\section{Поток минимальной стоимости с потенциалами}
+Для дуг \texttt{(from,to,capacity,cost)} возвращает поток до \texttt{limit}, его минимальную стоимость и потоки по исходным ID; при недостижимом лимите поток максимальный.
+Требуются $s\ne t$, неотрицательные ёмкости и лимит, отсутствие любых отрицательных циклов положительной ёмкости в начальной остаточной сети; достижимый отрицательный цикл вызывает \texttt{domain\_error}.
+Петли и кратные дуги допустимы; $2E<\texttt{INT\_MAX}$, стоимость не равна \texttt{LLONG\_MIN}, вся арифметика помещается в \texttt{ll}, конечные расстояния меньше \texttt{LLONG\_MAX}.
+Время $O(VE+K(E+V)\log(V+1))$ для $K$ увеличений, память $O(V+E)$.
+\begin{lstlisting}[name=advanced_graph_min_cost_flow]
+tuple<ll, ll, vector<ll>> min_cost_flow(int n,
+        const vector<tuple<int, int, ll, ll>>& input, int s, int t, ll limit) {
+    struct Edge { int from, to; ll capacity, cost; };
+    vector<Edge> edges;
+    vector<vector<int>> graph(n);
+    for (auto [u, v, capacity, cost] : input) {
+        int id = edges.size();
+        graph[u].push_back(id); graph[v].push_back(id + 1);
+        edges.push_back({u, v, capacity, cost});
+        edges.push_back({v, u, 0, -cost});
+    }
+    vector<ll> potential(n, LLONG_MAX);
+    potential[s] = 0;
+    for (int iteration = 0; iteration < n; ++iteration) {
+        bool changed = false;
+        for (const auto& edge : edges) {
+            if (edge.capacity == 0 || potential[edge.from] == LLONG_MAX) continue;
+            ll candidate = potential[edge.from] + edge.cost;
+            if (candidate < potential[edge.to]) {
+                potential[edge.to] = candidate;
+                changed = true;
+            }
+        }
+        if (!changed) break;
+        if (iteration == n - 1) throw domain_error("reachable negative cost cycle");
+    }
+    for (ll& value : potential) if (value == LLONG_MAX) value = 0;
+    ll flow = 0, total = 0;
+    while (flow < limit) {
+        vector<ll> distance(n, LLONG_MAX);
+        vector<int> previous(n, -1);
+        priority_queue<pair<ll, int>, vector<pair<ll, int>>, greater<>> queue;
+        distance[s] = 0; queue.push({0, s});
+        while (!queue.empty()) {
+            auto [current, u] = queue.top(); queue.pop();
+            if (current != distance[u]) continue;
+            for (int id : graph[u]) {
+                const auto& edge = edges[id];
+                if (edge.capacity == 0) continue;
+                ll reduced = edge.cost + potential[u] - potential[edge.to];
+                ll candidate = current + reduced;
+                if (candidate < distance[edge.to]) {
+                    distance[edge.to] = candidate;
+                    previous[edge.to] = id;
+                    queue.push({candidate, edge.to});
+                }
+            }
+        }
+        if (previous[t] == -1) break;
+        for (int v = 0; v < n; ++v)
+            if (distance[v] != LLONG_MAX) potential[v] += distance[v];
+        ll increase = limit - flow;
+        for (int v = t; v != s; v = edges[previous[v]].from)
+            increase = min(increase, edges[previous[v]].capacity);
+        for (int v = t; v != s; v = edges[previous[v]].from) {
+            int id = previous[v];
+            total += increase * edges[id].cost;
+            edges[id].capacity -= increase;
+            edges[id ^ 1].capacity += increase;
+        }
+        flow += increase;
+    }
+    vector<ll> edgeFlow(input.size());
+    for (int id = 0; id < (int)input.size(); ++id)
+        edgeFlow[id] = edges[2 * id + 1].capacity;
+    return {flow, total, edgeFlow};
+}
+\end{lstlisting}
+% Ориентированные рёбра заданы кортежами \texttt{(from,to,capacity,cost)}.
+% Возвращаются отправленный поток (не более \texttt{limit}), его стоимость
+% и потоки по исходным ID. Если лимит недостижим, возвращается максимальный
+% возможный поток. Требуются $s\ne t$, неотрицательные ёмкости и лимит.
+% Петли и кратные дуги поддержаны. Начальная остаточная сеть не должна
+% содержать отрицательных циклов положительной ёмкости.
+% В частности, достижимый из $s$ отрицательный цикл явно обнаруживается
+% Беллманом--Фордом и вызывает \texttt{domain\_error}; недостижимые циклы
+% не проверяются и также исключены контрактом для глобальной оптимальности.
+% Время $O(VE+K(E+V)\log(V+1))$ для $K$ увеличений, память $O(V+E)$.
+% Требуется $2E<\texttt{INT\_MAX}$; стоимость не равна
+% \texttt{LLONG\_MIN}. Все суммы расстояний, потенциалов, приведённые стоимости,
+% разности ёмкостей, произведения увеличения на стоимость дуги и накопленные
+% стоимости помещаются в \texttt{ll}. Любое конечное расстояние меньше
+% \texttt{LLONG\_MAX}; этот маркер никогда не участвует в сложении.
+%
+% Для произвольных отрицательных циклов нужны отмена циклов или другой
+% алгоритм. Проверка из фиктивного источника во все вершины может выявить
+% также недостижимые отрицательные циклы. Масштабирование ёмкостей полезно
+% для больших значений потока; число увеличений здесь не полиномиально по
+% длине двоичной записи ёмкостей.
+
+\section{Допустимая циркуляция с нижними границами}
+Для дуг \texttt{(from,to,lower,upper)} возвращает потоки по ID с сохранением баланса каждой вершины либо \texttt{nullopt}; источника и стока нет.
+Требуется $0\le lower\le upper$, неверные границы дают \texttt{nullopt}; петли и пустая сеть допустимы.
+Требуется $n+2<\texttt{INT\_MAX}$, $2(E+n)<\texttt{INT\_MAX}$; вся арифметика помещается в \texttt{ll}, баланс не равен \texttt{LLONG\_MIN}.
+Время $O(V^2(E+V))$, память $O(V+E)$, нужен стек глубины $O(V)$.
+\begin{lstlisting}[name=advanced_graph_circulation]
+optional<vector<ll>> feasible_circulation(int n,
+        const vector<tuple<int, int, ll, ll>>& input) {
+    struct Edge { int to; ll capacity; };
+    int source = n, sink = n + 1;
+    vector<Edge> edges;
+    vector<vector<int>> graph(n + 2);
+    auto add = [&](int u, int v, ll capacity) {
+        int id = edges.size();
+        graph[u].push_back(id); graph[v].push_back(id + 1);
+        edges.push_back({v, capacity}); edges.push_back({u, 0});
+    };
+    vector<ll> balance(n);
+    for (auto [u, v, lower, upper] : input) {
+        if (lower < 0 || lower > upper) return nullopt;
+        add(u, v, upper - lower);
+        balance[u] -= lower; balance[v] += lower;
+    }
+    ll required = 0;
+    for (int v = 0; v < n; ++v) {
+        if (balance[v] > 0) { add(source, v, balance[v]); required += balance[v]; }
+        if (balance[v] < 0) add(v, sink, -balance[v]);
+    }
+    vector<int> level(n + 2), position(n + 2);
+    ll flow = 0;
+    while (flow < required) {
+        fill(level.begin(), level.end(), -1);
+        queue<int> queue;
+        queue.push(source); level[source] = 0;
+        while (!queue.empty()) {
+            int u = queue.front(); queue.pop();
+            for (int id : graph[u]) {
+                int v = edges[id].to;
+                if (edges[id].capacity > 0 && level[v] == -1) {
+                    level[v] = level[u] + 1; queue.push(v);
+                }
+            }
+        }
+        if (level[sink] == -1) return nullopt;
+        fill(position.begin(), position.end(), 0);
+        auto push = [&](auto&& self, int u, ll amount) -> ll {
+            if (u == sink) return amount;
+            for (int& i = position[u]; i < (int)graph[u].size(); ++i) {
+                int id = graph[u][i], v = edges[id].to;
+                if (edges[id].capacity == 0 || level[v] != level[u] + 1) continue;
+                ll sent = self(self, v, min(amount, edges[id].capacity));
+                if (sent == 0) continue;
+                edges[id].capacity -= sent; edges[id ^ 1].capacity += sent;
+                return sent;
+            }
+            return 0;
+        };
+        while (flow < required) {
+            ll sent = push(push, source, required - flow);
+            if (sent == 0) break;
+            flow += sent;
+        }
+    }
+    vector<ll> result(input.size());
+    for (int id = 0; id < (int)input.size(); ++id)
+        result[id] = get<2>(input[id]) + edges[2 * id + 1].capacity;
+    return result;
+}
+\end{lstlisting}
+% Для каждой дуги \texttt{(from,to,lower,upper)} найти поток в границах,
+% сохраняющий баланс в каждой вершине. Возвращается массив потоков по ID
+% либо \texttt{nullopt}. Это именно циркуляция без источника и стока.
+% Требуется $0\le lower\le upper$; неверные границы дают \texttt{nullopt}.
+% Петли допустимы, пустая сеть допустима. Время $O(V^2(E+V))$, память $O(V+E)$.
+% Диниц полностью локален. Требуется $n+2<\texttt{INT\_MAX}$,
+% $2(E+n)<\texttt{INT\_MAX}$. Балансы, сумма положительных балансов,
+% все промежуточные суммы и восстановленные потоки помещаются в \texttt{ll};
+% баланс не равен \texttt{LLONG\_MIN}, поскольку может отрицаться.
+%
+% Для потока из $s$ в $t$ добавляется дуга $t\to s$ с подходящей верхней
+% границей; её поток определяет значение исходного потока. Максимизация
+% требует отдельной фазы в остаточной сети после удаления служебных дуг.
+
+\section{Точки сочленения и рёберные блоки двусвязности}
+Для неориентированного мультиграфа, заданного парами концов рёбер, возвращает флаги точек сочленения, блоки вершинной двусвязности как списки ID рёбер и изолированные вершины.
+ID --- позиция ребра во входе; каждый мост и каждая петля образуют отдельный блок, изолированные вершины пустых блоков не создают.
+Требуется $2E<\texttt{INT\_MAX}$; время и память $O(V+E)$, нужен стек глубины $O(V)$.
+\begin{lstlisting}[name=advanced_graph_biconnected]
+tuple<vector<char>, vector<vector<int>>, vector<int>> biconnected_blocks(
+        int n, const vector<pair<int, int>>& edges) {
+    vector<vector<pair<int, int>>> graph(n);
+    vector<vector<int>> blocks;
+    for (int id = 0; id < (int)edges.size(); ++id) {
+        auto [u, v] = edges[id];
+        if (u == v) blocks.push_back({id});
+        graph[u].push_back({v, id}); graph[v].push_back({u, id});
+    }
+    vector<int> tin(n, -1), low(n), stack, isolated;
+    vector<char> articulation(n);
+    int timer = 0;
+    auto dfs = [&](auto&& self, int u, int parentEdge) -> void {
+        tin[u] = low[u] = timer++;
+        int children = 0;
+        for (auto [v, id] : graph[u]) {
+            if (id == parentEdge || v == u) continue;
+            if (tin[v] == -1) {
+                ++children; stack.push_back(id);
+                self(self, v, id);
+                low[u] = min(low[u], low[v]);
+                if (low[v] >= tin[u]) {
+                    if (parentEdge != -1) articulation[u] = true;
+                    vector<int> block;
+                    do { block.push_back(stack.back()); stack.pop_back(); }
+                    while (block.back() != id);
+                    blocks.push_back(move(block));
+                }
+            } else if (tin[v] < tin[u]) {
+                stack.push_back(id); low[u] = min(low[u], tin[v]);
+            }
+        }
+        if (parentEdge == -1) articulation[u] = children > 1;
+    };
+    for (int u = 0; u < n; ++u) if (tin[u] == -1) {
+        if (graph[u].empty()) isolated.push_back(u);
+        dfs(dfs, u, -1);
+    }
+    return {articulation, blocks, isolated};
+}
+\end{lstlisting}
+% Неориентированный мультиграф задан парами концов; ID равен позиции ребра.
+% Возвращаются флаги точек сочленения, блоки как списки ID рёбер и список
+% изолированных вершин. Здесь блоки --- компоненты вершинной двусвязности,
+% а не компоненты после удаления мостов. Мост образует отдельный блок,
+% каждая петля по принятому соглашению тоже отдельный блок. Изолированные
+% вершины не создают пустых блоков и перечисляются отдельно.
+% Время и память $O(V+E)$.
+% Пропускается только родительское ребро по ID, а не все рёбра к родителю:
+% это существенно для кратных рёбер. Требуется $2E<\texttt{INT\_MAX}$.
+%
+% Из блоков можно построить block-cut forest. Для петель соглашение о
+% блоках нужно согласовать с потребителем результата; обычные утверждения
+% о block-cut tree часто формулируются для графов без петель. Итеративный
+% обход позволяет обрабатывать длинные цепочки без большого системного стека.
+
+\section{Офлайн-динамическая связность}
+Операция \texttt{(type,u,v)}: 0 добавляет неориентированное ребро, 1 удаляет одну копию, 2 спрашивает связность; возвращает ответы $0/1$ в порядке запросов.
+Петли допустимы, копии удаляются в порядке LIFO; удаление отсутствующего ребра и неизвестный тип вызывают \texttt{invalid\_argument}.
+Требуется $4\max(1,Q)<\texttt{INT\_MAX}$, число записей интервалов и размер истории помещаются в \texttt{int}.
+Время $O(Q\log(Q+1)\log(V+1))$, память $O(V+Q\log(Q+1))$, глубина рекурсии $O(\log(Q+1))$.
+\begin{lstlisting}[name=advanced_graph_dynamic_connectivity]
+vector<int> offline_dynamic_connectivity(int n,
+        const vector<tuple<int, int, int>>& operations) {
+    int q = operations.size();
+    if (q == 0) return {};
+    vector<vector<pair<int, int>>> tree(4 * q);
+    auto add = [&](auto&& self, int node, int l, int r, int a, int b,
+                   pair<int, int> edge) -> void {
+        if (a >= r || b <= l) return;
+        if (a <= l && r <= b) { tree[node].push_back(edge); return; }
+        int middle = l + (r - l) / 2;
+        self(self, node * 2, l, middle, a, b, edge);
+        self(self, node * 2 + 1, middle, r, a, b, edge);
+    };
+    map<pair<int, int>, vector<int>> active;
+    for (int time = 0; time < q; ++time) {
+        auto [type, u, v] = operations[time];
+        if (u > v) swap(u, v);
+        pair<int, int> edge = {u, v};
+        if (type == 0) active[edge].push_back(time);
+        else if (type == 1) {
+            auto it = active.find(edge);
+            if (it == active.end() || it->second.empty())
+                throw invalid_argument("removing inactive edge");
+            int start = it->second.back(); it->second.pop_back();
+            add(add, 1, 0, q, start, time, edge);
+        } else if (type != 2) throw invalid_argument("unknown operation type");
+    }
+    for (const auto& [edge, starts] : active)
+        for (int start : starts) add(add, 1, 0, q, start, q, edge);
+    vector<int> parent(n), size(n, 1), answers;
+    iota(parent.begin(), parent.end(), 0);
+    auto find = [&](int v) {
+        while (parent[v] != v) v = parent[v];
+        return v;
+    };
+    vector<pair<int, int>> history;
+    auto solve = [&](auto&& self, int node, int l, int r) -> void {
+        int snapshot = history.size();
+        for (auto [u, v] : tree[node]) {
+            u = find(u); v = find(v);
+            if (u == v) continue;
+            if (size[u] < size[v]) swap(u, v);
+            history.push_back({v, size[u]});
+            parent[v] = u; size[u] += size[v];
+        }
+        if (r - l == 1) {
+            auto [type, u, v] = operations[l];
+            if (type == 2) answers.push_back(find(u) == find(v));
+        } else {
+            int middle = l + (r - l) / 2;
+            self(self, node * 2, l, middle);
+            self(self, node * 2 + 1, middle, r);
+        }
+        while ((int)history.size() > snapshot) {
+            auto [v, oldSize] = history.back(); history.pop_back();
+            size[parent[v]] = oldSize; parent[v] = v;
+        }
+    };
+    solve(solve, 1, 0, q);
+    return answers;
+}
+\end{lstlisting}
+% Операции --- тройки \texttt{(type,u,v)}: $0$ добавляет неориентированное
+% ребро, $1$ удаляет одну его копию, $2$ спрашивает связность вершин.
+% Возвращаются ответы $0/1$ в порядке запросов. Пары нормализуются; копии
+% одинакового ребра удаляются в порядке LIFO, что не меняет связность.
+% Удаление отсутствующего ребра и неизвестный тип вызывают
+% \texttt{invalid\_argument}. Петли разрешены, вершина связна сама с собой.
+% Время $O(Q\log(Q+1)\log(V+1))$, память $O(V+Q\log(Q+1))$.
+% DSU без сжатия путей, с объединением по размеру и откатом к снимку.
+% Интервал активности полуоткрытый: от добавления до удаления.
+% Требуется $4\max(1,Q)<\texttt{INT\_MAX}$, а суммарное число записей
+% интервалов и история отката также помещаются в \texttt{int}.
+%
+% В историю можно добавить число компонент или агрегаты компонент.
+% Для онлайн-удалений нужны существенно более сложные структуры; обычная
+% DSU со сжатием путей не подходит для этого отката и оценки сложности.
+
+\iffalse
+\section{Дерево реконструкции Краскала}
+Для неориентированных рёбер \texttt{(u,v,weight)} возвращает лес реконструкции с полями \texttt{children}, \texttt{parent}, \texttt{weight}, \texttt{mergeEdge}, \texttt{roots}; исходные вершины --- листья $[0,n)$.
+Узел объединения хранит двух детей, вес и исходный ID ребра; у листьев \texttt{mergeEdge} равен $-1$, вес 0 условен, у корней родитель $-1$.
+Вес LCA различных листьев одной компоненты --- минимально возможный максимум веса на пути между ними; петли игнорируются, отрицательные веса допустимы, пустой граф даёт пустой лес.
+Требуется $2n<\texttt{INT\_MAX}$; время $O(E\log(E+1)+V+E\alpha(V))$, память $O(V+E)$.
+\begin{lstlisting}[name=advanced_graph_kruskal_tree]
+auto kruskal_reconstruction_tree(int n,
+        const vector<tuple<int, int, ll>>& edges) {
+    struct Result {
+        vector<array<int, 2>> children;
+        vector<int> parent;
+        vector<ll> weight;
+        vector<int> mergeEdge, roots;
+    };
+    Result result{vector<array<int, 2>>(n, {-1, -1}), vector<int>(n, -1),
+                  vector<ll>(n), vector<int>(n, -1), {}};
+    vector<int> dsu(n), size(n, 1), top(n), order(edges.size());
+    iota(dsu.begin(), dsu.end(), 0);
+    iota(top.begin(), top.end(), 0);
+    iota(order.begin(), order.end(), 0);
+    auto find = [&](int v) {
+        while (v != dsu[v]) { dsu[v] = dsu[dsu[v]]; v = dsu[v]; }
+        return v;
+    };
+    sort(order.begin(), order.end(), [&](int a, int b) {
+        return pair{get<2>(edges[a]), a} < pair{get<2>(edges[b]), b};
+    });
+    for (int id : order) {
+        auto [u, v, weight] = edges[id];
+        u = find(u); v = find(v);
+        if (u == v) continue;
+        int node = result.parent.size();
+        result.children.push_back({top[u], top[v]});
+        result.parent[top[u]] = result.parent[top[v]] = node;
+        result.parent.push_back(-1); result.weight.push_back(weight);
+        result.mergeEdge.push_back(id);
+        if (size[u] < size[v]) swap(u, v);
+        dsu[v] = u; size[u] += size[v]; top[u] = node;
+    }
+    for (int v = 0; v < n; ++v)
+        if (dsu[v] == v) result.roots.push_back(top[v]);
+    return result;
+}
+\end{lstlisting}
+% Неориентированные рёбра --- \texttt{(u,v,weight)}. Возвращается локальный
+% тип с полями \texttt{children}, \texttt{parent}, \texttt{weight},
+% \texttt{mergeEdge}, \texttt{roots}. Исходные вершины --- листья $[0,n)$;
+% каждое успешное объединение создаёт новую вершину с двумя детьми и весом
+% объединяющего ребра. \texttt{mergeEdge} хранит его исходный ID, для листа
+% равен $-1$; вес листа $0$ условен и не участвует в сравнениях.
+% Для несвязного графа получается лес, корни имеют родителя $-1$.
+% Вес LCA двух различных листьев одной компоненты --- минимально возможный
+% максимум веса ребра на соединяющем пути. Петли игнорируются, равные веса
+% обрабатываются по ID. Время $O(E\log(E+1)+V+E\alpha(V))$, память $O(V+E)$.
+% Требуется $2n<\texttt{INT\_MAX}$. Отрицательные веса допустимы;
+% арифметика над весами не выполняется. Пустой граф даёт пустой лес.
+%
+% Двоичные подъёмы или Euler tour с RMQ дают быстрые LCA-запросы.
+% Для запросов между разными компонентами нужно отдельно проверять корень;
+% для запроса вершины к самой себе порог следует определить соглашением.
+
+\fi
+\iffalse
+\section{Второй остов: другой набор рёбер}
+Для неориентированного взвешенного мультиграфа возвращает \texttt{mstWeight}, ID рёбер \texttt{mstEdges} и \texttt{alternative}: стоимость другого остова, ID добавляемого и удаляемого ребра.
+При несвязности или $n=0$ результат отсутствует; при единственном остове отсутствует альтернатива, равная стоимость разрешена --- отличается набор ID.
+Все промежуточные суммы и разности весов помещаются в \texttt{ll}, размеры таблиц --- в \texttt{int}; отрицательные веса, включая \texttt{LLONG\_MIN}, допустимы.
+Время $O(E\log(E+1)+(V+E)\log(V+1))$, память $O(E+V\log(V+1))$, нужен стек глубины $O(V)$.
+\begin{lstlisting}[name=advanced_graph_second_mst]
+auto second_spanning_tree(int n, const vector<tuple<int, int, ll>>& edges) {
+    struct Result {
+        ll mstWeight = 0;
+        vector<int> mstEdges;
+        optional<tuple<ll, int, int>> alternative;
+    };
+    if (n == 0) return optional<Result>{};
+    int m = edges.size();
+    vector<int> parent(n), size(n, 1), order(m);
+    iota(parent.begin(), parent.end(), 0);
+    iota(order.begin(), order.end(), 0);
+    auto find = [&](int v) {
+        while (v != parent[v]) { parent[v] = parent[parent[v]]; v = parent[v]; }
+        return v;
+    };
+    sort(order.begin(), order.end(), [&](int a, int b) {
+        return pair{get<2>(edges[a]), a} < pair{get<2>(edges[b]), b};
+    });
+    Result result;
+    vector<char> chosen(m);
+    vector<vector<pair<int, int>>> graph(n);
+    for (int id : order) {
+        auto [u, v, weight] = edges[id];
+        int a = find(u), b = find(v);
+        if (a == b) continue;
+        if (size[a] < size[b]) swap(a, b);
+        parent[b] = a; size[a] += size[b];
+        result.mstWeight += weight; result.mstEdges.push_back(id); chosen[id] = true;
+        graph[u].push_back({v, id}); graph[v].push_back({u, id});
+    }
+    if ((int)result.mstEdges.size() != n - 1) return optional<Result>{};
+    int levels = 1;
+    while ((1LL << levels) <= n) ++levels;
+    vector<vector<int>> up(levels, vector<int>(n));
+    vector<vector<int>> maximum(levels, vector<int>(n, -1));
+    vector<int> depth(n, -1), traversal = {0};
+    depth[0] = 0;
+    for (int i = 0; i < (int)traversal.size(); ++i) {
+        int u = traversal[i];
+        for (auto [v, id] : graph[u]) if (depth[v] == -1) {
+            depth[v] = depth[u] + 1; up[0][v] = u; maximum[0][v] = id;
+            traversal.push_back(v);
+        }
+    }
+    auto heavier = [&](int a, int b) {
+        if (a == -1) return b;
+        if (b == -1) return a;
+        return pair{get<2>(edges[a]), a} < pair{get<2>(edges[b]), b} ? b : a;
+    };
+    for (int k = 1; k < levels; ++k)
+        for (int v = 0; v < n; ++v) {
+            up[k][v] = up[k - 1][up[k - 1][v]];
+            maximum[k][v] = heavier(maximum[k - 1][v],
+                                    maximum[k - 1][up[k - 1][v]]);
+        }
+    auto pathMaximum = [&](int u, int v) {
+        int answer = -1;
+        if (depth[u] < depth[v]) swap(u, v);
+        int difference = depth[u] - depth[v];
+        for (int k = 0; k < levels; ++k) if ((difference >> k) & 1) {
+            answer = heavier(answer, maximum[k][u]); u = up[k][u];
+        }
+        if (u == v) return answer;
+        for (int k = levels - 1; k >= 0; --k) if (up[k][u] != up[k][v]) {
+            answer = heavier(answer, heavier(maximum[k][u], maximum[k][v]));
+            u = up[k][u]; v = up[k][v];
+        }
+        return heavier(answer, heavier(maximum[0][u], maximum[0][v]));
+    };
+    for (int id = 0; id < m; ++id) if (!chosen[id]) {
+        auto [u, v, weight] = edges[id];
+        if (u == v) continue;
+        int removed = pathMaximum(u, v);
+        ll candidateWeight = result.mstWeight - get<2>(edges[removed]) + weight;
+        tuple<ll, int, int> candidate = {candidateWeight, id, removed};
+        if (!result.alternative || candidate < *result.alternative)
+            result.alternative = candidate;
+    }
+    return optional<Result>{move(result)};
+}
+\end{lstlisting}
+% Для неориентированного взвешенного мультиграфа возвращается
+% \texttt{optional} локального результата: \texttt{mstWeight},
+% \texttt{mstEdges} (ID выбранного минимального остова), \texttt{alternative}.
+% Последнее поле --- \texttt{optional<tuple<ll,int,int>>}: стоимость лучшего
+% другого остова, ID добавляемого и удаляемого ребра. Равная стоимость
+% разрешена: отличается именно множество ID. При несвязности или $n=0$
+% нет результата; при единственном остове нет альтернативы. Для $n=1$
+% остов пустой, петли не дают альтернативы. Время
+% $O(E\log(E+1)+(V+E)\log(V+1))$, память $O(E+V\log(V+1))$.
+% Краскал выбирает первый остов, двоичные подъёмы находят максимальное
+% ребро на пути. Для каждой нетривиальной хорды заменяется одно такое ребро.
+% Все частичные суммы весов остова, разности \texttt{mstWeight-removedWeight}
+% и последующие суммы с добавляемым весом должны помещаться в \texttt{ll}.
+% Маркером отсутствующего ребра служит ID $-1$, поэтому допустим даже вес
+% \texttt{LLONG\_MIN}. Размеры таблиц подъёмов помещаются в \texttt{int}.
+%
+% Для строго большего веса недостаточно отбрасывать равные кандидаты:
+% нужно хранить два наибольших различных веса на пути. Здесь такая задача
+% не решается намеренно. Возвращённая замена позволяет восстановить второй
+% остов без хранения ещё одного полного списка рёбер.
+
+\fi

@@ -1,0 +1,639 @@
+\section{Целочисленные предикаты: cross, dot, ориентация}
+Вычисляет векторное и скалярное произведения и знак поворота для точек \texttt{pair<ll,ll>}; положительный поворот направлен против часовой стрелки, нулевой означает коллинеарность.
+Исходные координаты до вычитания должны удовлетворять $|x|,|y|\le10^9$, иначе произведения могут переполнить \texttt{ll}.
+Нужны стандартные заголовки, \texttt{std} и \texttt{ll = long long}; время и память $O(1)$.
+\begin{lstlisting}[name=geometry_integer]
+ll cross_integer(pair<ll, ll> a, pair<ll, ll> b) {
+    return a.first * b.second - a.second * b.first;
+}
+
+ll dot_integer(pair<ll, ll> a, pair<ll, ll> b) {
+    return a.first * b.first + a.second * b.second;
+}
+
+int orientation(pair<ll, ll> a, pair<ll, ll> b, pair<ll, ll> c) {
+    ll value = cross_integer({b.first - a.first, b.second - a.second},
+                             {c.first - a.first, c.second - a.second});
+    return (value > 0) - (value < 0);
+}
+\end{lstlisting}
+% Точные знаки поворота и скалярные произведения за $O(1)$.
+% Точки и векторы --- \texttt{pair<ll,ll>}, положительный поворот --- против
+% часовой стрелки. Во всех листингах нужны стандартные заголовки,
+% \texttt{using namespace std}, внешние \texttt{ll = long long} и
+% \texttt{db = double}. Глобальных типов и констант здесь нет.
+% Для исходных целочисленных координат $|x|,|y|\le10^9$ разности не больше
+% $2\cdot10^9$, каждое произведение не больше $4\cdot10^{18}$, сумма или
+% разность двух произведений не больше $8\cdot10^{18}<2^{63}-1$.
+% Поэтому даже cross/dot двух разностей безопасны в \texttt{ll}; расширенная
+% целочисленная арифметика не требуется. Для больших координат гарантии нет.
+%
+% Нулевой знак включает совпадающие точки. Ограничение относится к координатам
+% до вычитания; суммы Минковского могут уже выйти за этот диапазон.
+
+\section{Точка на отрезке и пересечение отрезков}
+Проверяет принадлежность точки замкнутому отрезку и пересечение двух замкнутых отрезков, возвращая логический ответ.
+Касания концами и коллинеарное перекрытие считаются пересечением, вырожденный отрезок допустим.
+Нужна \texttt{orientation} с исходными целочисленными координатами по модулю не больше $10^9$; время и память $O(1)$.
+\begin{lstlisting}[name=geometry_segments]
+bool on_segment(pair<ll, ll> p, pair<ll, ll> a, pair<ll, ll> b) {
+    return orientation(a, b, p) == 0 &&
+        min(a.first, b.first) <= p.first && p.first <= max(a.first, b.first) &&
+        min(a.second, b.second) <= p.second && p.second <= max(a.second, b.second);
+}
+
+bool segments_intersect(pair<ll, ll> a, pair<ll, ll> b,
+                        pair<ll, ll> c, pair<ll, ll> d) {
+    int ab_c = orientation(a, b, c), ab_d = orientation(a, b, d);
+    int cd_a = orientation(c, d, a), cd_b = orientation(c, d, b);
+    if (ab_c == 0 && on_segment(c, a, b)) return true;
+    if (ab_d == 0 && on_segment(d, a, b)) return true;
+    if (cd_a == 0 && on_segment(a, c, d)) return true;
+    if (cd_b == 0 && on_segment(b, c, d)) return true;
+    return ab_c * ab_d < 0 && cd_a * cd_b < 0;
+}
+\end{lstlisting}
+% Точные замкнутые предикаты за $O(1)$: касание концами и коллинеарное
+% перекрытие считаются пересечением. Отрезок может быть точкой.
+% Использует \texttt{orientation} и его ограничения координат.
+%
+% Предикат не восстанавливает точку или общий отрезок. Для координат
+% пересечения непараллельных прямых ниже есть вещественная функция.
+
+\section{Вещественные прямые: пересечение, проекция, отражение}
+Для точек \texttt{pair<db,db>} находит пересечение прямых, проекцию и отражение точки; прямая задаётся двумя различными точками.
+Пересечение возвращает \texttt{nullopt} для параллельных или совпадающих прямых, проекция и отражение --- для вырожденной прямой.
+Здесь и далее \texttt{db = double}, координаты и промежуточные вычисления должны быть конечны, а \texttt{eps} --- конечным и неотрицательным; допуск подбирается под задачу и не гарантирует точности на почти вырожденных данных.
+Время и память $O(1)$; параллельность проверяется относительным угловым допуском, совпадение концов --- точно.
+\begin{lstlisting}[name=geometry_lines]
+db cross_real(pair<db, db> a, pair<db, db> b, pair<db, db> c) {
+    return (b.first - a.first) * (c.second - a.second) -
+           (b.second - a.second) * (c.first - a.first);
+}
+
+db squared_distance(pair<db, db> a, pair<db, db> b) {
+    db x = a.first - b.first, y = a.second - b.second;
+    return x * x + y * y;
+}
+
+optional<pair<db, db>> line_intersection(
+        pair<db, db> a, pair<db, db> b,
+        pair<db, db> c, pair<db, db> d, db eps) {
+    db ux = b.first - a.first, uy = b.second - a.second;
+    db vx = d.first - c.first, vy = d.second - c.second;
+    db determinant = ux * vy - uy * vx;
+    if (a == b || c == d ||
+        abs(determinant) <= eps * hypot(ux, uy) * hypot(vx, vy)) return nullopt;
+    db t = ((c.first - a.first) * vy - (c.second - a.second) * vx) / determinant;
+    return pair<db, db>{a.first + t * ux, a.second + t * uy};
+}
+
+optional<pair<db, db>> project_line(
+        pair<db, db> p, pair<db, db> a, pair<db, db> b) {
+    if (a == b) return nullopt;
+    db x = b.first - a.first, y = b.second - a.second;
+    db t = ((p.first - a.first) * x + (p.second - a.second) * y) / (x*x + y*y);
+    return pair<db, db>{a.first + t*x, a.second + t*y};
+}
+
+optional<pair<db, db>> reflect_line(
+        pair<db, db> p, pair<db, db> a, pair<db, db> b) {
+    auto projection = project_line(p, a, b);
+    if (!projection) return nullopt;
+    return pair<db, db>{2*projection->first - p.first, 2*projection->second - p.second};
+}
+\end{lstlisting}
+% Операции за $O(1)$ с точками \texttt{pair<db,db>}. Прямая задаётся двумя
+% различными точками. Пересечение возвращает \texttt{nullopt} для параллельных
+% и совпадающих прямых; проекция и отражение --- для вырожденной прямой.
+% Здесь и далее \texttt{eps} --- конечное неотрицательное число. Все входные
+% вещественные координаты конечны; промежуточные произведения, квадраты и
+% деления должны оставаться конечными. При \texttt{double} практически
+% разумны координаты порядка $10^6$ и \texttt{eps} порядка $10^{-9}$,
+% но это не гарантия точных предикатов: почти параллельные прямые,
+% почти касания и плохо обусловленные данные требуют выбора допуска под задачу.
+% \texttt{cross\_real(a,b,c)} считает $(b-a)\times(c-a)$.
+% Параллельность проверяется относительным угловым допуском; совпадение
+% концов прямой --- точным равенством. Сортировки всегда без допуска.
+%
+% \texttt{nullopt} намеренно не различает параллельность и совпадение.
+% Для точных рациональных пересечений нужен другой числовой контракт.
+% Общие вещественные ограничения этого блока действуют во всех следующих.
+
+\section{Расстояния от точки до прямой и отрезка}
+Возвращает евклидово расстояние от точки до прямой или замкнутого отрезка, заданных двумя точками.
+Для прямой из одной точки возвращает \texttt{nullopt}, для отрезка из одной точки --- расстояние до неё.
+Нужны \texttt{cross\_real} и \texttt{squared\_distance} с конечной вещественной арифметикой; время и память $O(1)$.
+\begin{lstlisting}[name=geometry_distances]
+optional<db> distance_line(pair<db, db> p, pair<db, db> a, pair<db, db> b) {
+    if (a == b) return nullopt;
+    return abs(cross_real(a, b, p)) / hypot(b.first-a.first, b.second-a.second);
+}
+
+db distance_segment(pair<db, db> p, pair<db, db> a, pair<db, db> b) {
+    if (a == b) return sqrt(squared_distance(p, a));
+    db x = b.first-a.first, y = b.second-a.second;
+    db t = clamp(((p.first-a.first)*x + (p.second-a.second)*y) / (x*x+y*y), 0.0, 1.0);
+    return hypot(p.first-a.first-t*x, p.second-a.second-t*y);
+}
+\end{lstlisting}
+% Евклидовы расстояния за $O(1)$. Для прямой из одной точки возвращается
+% \texttt{nullopt}, для отрезка из одной точки --- расстояние до неё.
+% Использует \texttt{cross\_real} и \texttt{squared\_distance}.
+%
+% Для сравнения расстояний можно работать с квадратами без извлечения корня.
+% Почти нулевой, но ненулевой отрезок здесь не заменяется точкой автоматически.
+
+\section{Ориентированная площадь многоугольника}
+По циклическому списку вершин возвращает ориентированную площадь: положительную при обходе против часовой стрелки, для обычной площади возьмите модуль.
+Пустой список, точка и отрезок дают ноль; для самопересечений результат алгебраический, а не площадь объединения.
+Нужна \texttt{cross\_real} с конечной вещественной арифметикой; время $O(n)$, дополнительная память $O(1)$.
+\begin{lstlisting}[name=geometry_area]
+db polygon_area(const vector<pair<db, db>>& polygon) {
+    db twice = 0;
+    for (int i = 1; i + 1 < (int)polygon.size(); ++i)
+        twice += cross_real(polygon[0], polygon[i], polygon[i+1]);
+    return twice / 2;
+}
+\end{lstlisting}
+% Площадь за $O(n)$ и $O(1)$ памяти; знак положителен для обхода против часовой
+% стрелки. Пустой список, точка и отрезок имеют нулевую площадь.
+% Использует \texttt{cross\_real}. Суммирование треугольников относительно
+% первой вершины уменьшает потерю точности при большом общем смещении.
+%
+% Для обычной площади берётся модуль; для самопересечений результат
+% алгебраический, не площадь объединения. Даже при целых координатах
+% сумма по всем рёбрам не обязана помещаться в \texttt{ll}.
+
+\section{Точка в произвольном простом многоугольнике}
+По целочисленным вершинам простого многоугольника и точке возвращает $-1$ снаружи, $0$ на границе, $1$ внутри за $O(n)$.
+Направление обхода произвольно, первую вершину в конце не повторяют; пустой список не содержит точек, одна или две точки задают только границу.
+Нужны \texttt{orientation} и \texttt{on\_segment}, исходные координаты по модулю не больше $10^9$.
+\begin{lstlisting}[name=geometry_point_polygon]
+int point_polygon(const vector<pair<ll, ll>>& polygon, pair<ll, ll> p) {
+    bool inside = false;
+    int n = polygon.size();
+    for (int i = 0; i < n; ++i) {
+        auto a = polygon[i], b = polygon[(i+1)%n];
+        if (on_segment(p, a, b)) return 0;
+        if ((a.second > p.second) != (b.second > p.second)) {
+            int turn = orientation(a, b, p);
+            if ((turn > 0) == (b.second > a.second)) inside = !inside;
+        }
+    }
+    return inside ? 1 : -1;
+}
+\end{lstlisting}
+% За $O(n)$ возвращает $-1$ снаружи, $0$ на границе, $1$ внутри.
+% Целочисленные координаты, направление обхода произвольно. Пустой список
+% не содержит точек; списки из одной или двух точек трактуются как граница.
+% Использует \texttt{orientation} и \texttt{on\_segment} с их ограничениями.
+% Луч направлен вправо, полуоткрытая проверка высот не удваивает вершины.
+%
+% Последнюю вершину не нужно повторять. При самопересечениях получается
+% правило чётности, а не проверка принадлежности простому многоугольнику.
+
+\section{Точка в выпуклом многоугольнике за логарифм}
+Проверяет точку в выпуклом многоугольнике за $O(\log n)$ и возвращает $-1$ снаружи, $0$ на границе, $1$ внутри.
+При $n\ge3$ вершины должны идти против часовой стрелки без повторов и промежуточных коллинеарных точек; начальная вершина любая, пустой список, точка и отрезок допустимы.
+Нужны целочисленные предикаты с исходными координатами по модулю не больше $10^9$; дополнительная память $O(1)$, выпуклость входа не проверяется.
+\begin{lstlisting}[name=geometry_point_convex]
+int point_convex(const vector<pair<ll, ll>>& polygon, pair<ll, ll> p) {
+    int n = polygon.size();
+    if (n == 0) return -1;
+    if (n == 1) return p == polygon[0] ? 0 : -1;
+    if (n == 2) return on_segment(p, polygon[0], polygon[1]) ? 0 : -1;
+    int first = orientation(polygon[0], polygon[1], p);
+    int last = orientation(polygon[0], polygon[n-1], p);
+    if (first < 0 || last > 0) return -1;
+    if (first == 0) return on_segment(p, polygon[0], polygon[1]) ? 0 : -1;
+    if (last == 0) return on_segment(p, polygon[0], polygon[n-1]) ? 0 : -1;
+    int left = 1, right = n-1;
+    while (right-left > 1) {
+        int middle = (left+right)/2;
+        if (orientation(polygon[0], polygon[middle], p) >= 0) left = middle;
+        else right = middle;
+    }
+    return orientation(polygon[left], polygon[right], p);
+}
+\end{lstlisting}
+% Та же классификация $-1/0/1$ за $O(\log n)$ и $O(1)$ памяти.
+% При $n\ge3$ нужен строго выпуклый многоугольник против часовой стрелки,
+% без повторов и промежуточных коллинеарных вершин. Начальная вершина любая.
+% Использует целочисленные предикаты. Пустой список, точка и отрезок допустимы.
+%
+% Очистку и разворот входа следует делать один раз до запросов, а не внутри
+% функции: иначе логарифмическое время потеряется. Проверки контракта нет.
+
+\iffalse
+\section{Диаметр выпуклого многоугольника: вращающиеся калиперы}
+По циклическому списку вершин выпуклого многоугольника возвращает квадрат максимального расстояния за $O(n)$ времени и $O(1)$ дополнительной памяти.
+При $n\ge3$ многоугольник должен быть строго выпуклым и обходиться против часовой стрелки; пустой список и одна точка дают $0$, две точки --- квадрат расстояния между ними.
+Нужны \texttt{cross\_real} и \texttt{squared\_distance} с конечной вещественной арифметикой; почти коллинеарные данные могут нарушить корректность из-за округления.
+\begin{lstlisting}[name=geometry_diameter]
+db convex_diameter_squared(const vector<pair<db, db>>& polygon) {
+    int n = polygon.size();
+    if (n < 2) return 0;
+    if (n == 2) return squared_distance(polygon[0], polygon[1]);
+    db answer = 0;
+    int opposite = 1;
+    for (int i = 0; i < n; ++i) {
+        int next = (i+1)%n;
+        while (cross_real(polygon[i], polygon[next], polygon[(opposite+1)%n]) >
+               cross_real(polygon[i], polygon[next], polygon[opposite]))
+            opposite = (opposite+1)%n;
+        answer = max({answer, squared_distance(polygon[i], polygon[opposite]),
+                      squared_distance(polygon[next], polygon[opposite])});
+    }
+    return answer;
+}
+\end{lstlisting}
+\fi
+
+% Квадрат максимального расстояния между вершинами за $O(n)$ и $O(1)$ памяти.
+% Для пустого списка и одной точки результат $0$, для двух точек --- их
+% квадрат расстояния. При $n\ge3$ вход строго выпуклый, против часовой стрелки.
+% Использует \texttt{cross\_real} и \texttt{squared\_distance}. Равные площади
+% не продвигают указатель; обе вершины текущего ребра проверяются.
+%
+% Можно сохранять пару индексов при обновлении ответа. Численная ошибка
+% на почти коллинеарном входе может нарушить предпосылки калиперов.
+
+\iffalse
+\section{Отсечение многоугольника полуплоскостью}
+Отсекает выпуклый многоугольник левой замкнутой полуплоскостью ориентированной прямой $a\to b$ и возвращает циклический список вершин, возможно пустой, точку или отрезок.
+Нужны $a\ne b$, \texttt{cross\_real} и конечная вещественная арифметика; время и память $O(n)$.
+Допуск \texttt{eps} измеряется в единицах расстояния: граница сдвигается до $(b-a)\times(p-a)\ge-\texttt{eps}\,|b-a|$, и пересечения вычисляются с этой же границей.
+Для невыпуклого входа один список не позволяет представить несвязное пересечение.
+\begin{lstlisting}[name=geometry_clipping]
+vector<pair<db, db>> clip_halfplane(const vector<pair<db, db>>& polygon,
+        pair<db, db> a, pair<db, db> b, db eps) {
+    assert(a != b && eps >= 0);
+    vector<pair<db, db>> result;
+    db shift = eps * hypot(b.first-a.first, b.second-a.second);
+    auto append = [&](pair<db, db> p) {
+        if (result.empty() || result.back() != p) result.push_back(p);
+    };
+    int n = polygon.size();
+    for (int i = 0; i < n; ++i) {
+        auto p = polygon[i], q = polygon[(i+1)%n];
+        db from = cross_real(a, b, p) + shift;
+        db to = cross_real(a, b, q) + shift;
+        if (from >= 0) append(p);
+        if ((from >= 0) != (to >= 0)) {
+            db t = from / (from-to);
+            append({p.first + t*(q.first-p.first), p.second + t*(q.second-p.second)});
+        }
+    }
+    if (result.size() > 1 && result.front() == result.back()) result.pop_back();
+    return result;
+}
+\end{lstlisting}
+\fi
+
+% Пересечение выпуклого многоугольника с левой замкнутой полуплоскостью
+% ориентированной прямой $a\to b$ за $O(n)$ времени и памяти.
+% Результат --- циклический список, возможно пустой, точка или отрезок.
+% Для невыпуклого входа один список не представляет несвязный результат.
+% Использует \texttt{cross\_real}. Требуется $a\ne b$. Допуск имеет единицы
+% расстояния: реально отсекается по сдвинутой границе
+% $(b-a)\times(p-a)\ge-\texttt{eps}\,|b-a|$.
+% Пересечения считаются с этой же границей, а не с исходной прямой.
+% Удаляются точные соседние повторы, близкие точки не склеиваются.
+%
+% \texttt{eps=0} не сдвигает геометрию, но не устраняет ошибки округления.
+% При положительном допуске площадь и вершины относятся к расширенной области.
+
+\iffalse
+\section{Ограниченное пересечение полуплоскостей отсечениями}
+\subsection*{Для чего нужен}
+Честный простой вариант: пересечение $k$ левых полуплоскостей с явно
+заданным квадратом $[-B,B]^2$. Это не алгоритм за $O(k\log k)$:
+время $O(k(k+4))$, память $O(k+4)$, так как каждый шаг добавляет не более
+одной вершины выпуклого многоугольника в точной арифметике.
+\subsection*{Реализация}
+Использует \texttt{clip\_halfplane}. $B>0$ конечен; концы каждой прямой
+различны. \texttt{eps} передаётся отсечению и расширяет полуплоскости,
+но не bounding box. Пустой набор ограничений возвращает квадрат.
+\begin{lstlisting}[name=geometry_halfplanes]
+vector<pair<db, db>> bounded_halfplanes(
+        const vector<pair<pair<db, db>, pair<db, db>>>& halfplanes,
+        db bound, db eps) {
+    assert(isfinite(bound) && bound > 0 && eps >= 0);
+    vector<pair<db, db>> polygon = {
+        {-bound, -bound}, {bound, -bound}, {bound, bound}, {-bound, bound}};
+    for (const auto& [a, b] : halfplanes) {
+        assert(a != b);
+        polygon = clip_halfplane(polygon, a, b, eps);
+    }
+    return polygon;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Функция не определяет неограниченность исходного пересечения. Bounding box
+является частью задачи; чтобы получить исходную ограниченную область,
+нужно заранее доказать, что она целиком лежит внутри квадрата.
+Плохая обусловленность может нарушить теоретическую структуру результата.
+
+
+\fi
+\iffalse
+\section{Сумма Минковского выпуклых многоугольников}
+\subsection*{Для чего нужен}
+Граница множества $A+B$ за $O(n+m)$ времени и памяти слиянием направлений
+рёбер. Непустые входы при размере от трёх строго выпуклы, идут против часовой
+стрелки и не повторяют начало. Точки и отрезки из разных концов допустимы.
+\subsection*{Реализация}
+Использует \texttt{cross\_real}. Пустой аргумент даёт пустую сумму.
+Начало переносится в минимальную по $(y,x)$ вершину. Равные направления
+объединяются по точному нулю cross; численно почти параллельные рёбра
+могут оставить почти коллинеарные вершины. Результат начинается снизу слева.
+\begin{lstlisting}[name=geometry_minkowski]
+vector<pair<db, db>> minkowski_sum(vector<pair<db, db>> a,
+                                   vector<pair<db, db>> b) {
+    if (a.empty() || b.empty()) return {};
+    auto rotate_lowest = [](vector<pair<db, db>>& polygon) {
+        auto lowest = min_element(polygon.begin(), polygon.end(), [](auto p, auto q) {
+            return pair{p.second, p.first} < pair{q.second, q.first};
+        });
+        rotate(polygon.begin(), lowest, polygon.end());
+    };
+    rotate_lowest(a);
+    rotate_lowest(b);
+    if (a.size() == 1 || b.size() == 1) {
+        if (b.size() != 1) swap(a, b);
+        for (auto& p : a) { p.first += b[0].first; p.second += b[0].second; }
+        return a;
+    }
+    int n = a.size(), m = b.size(), i = 0, j = 0;
+    vector<pair<db, db>> result;
+    while (i < n || j < m) {
+        result.push_back({a[i%n].first+b[j%m].first, a[i%n].second+b[j%m].second});
+        if (i == n) { ++j; continue; }
+        if (j == m) { ++i; continue; }
+        pair<db, db> u = {a[(i+1)%n].first-a[i%n].first,
+                         a[(i+1)%n].second-a[i%n].second};
+        pair<db, db> v = {b[(j+1)%m].first-b[j%m].first,
+                         b[(j+1)%m].second-b[j%m].second};
+        db turn = cross_real({0, 0}, u, v);
+        if (turn > 0) ++i;
+        else if (turn < 0) ++j;
+        else { ++i; ++j; }
+    }
+    return result;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Нельзя произвольно подавать невыпуклый вход или обход по часовой стрелке.
+Для исходных произвольных наборов сначала нужна выпуклая оболочка;
+её построение не входит в линейную оценку этой функции.
+
+
+\fi
+\iffalse
+\section{Ближайшая пара точек}
+\subsection*{Для чего нужен}
+Минимальный квадрат расстояния за $O(n\log n)$ времени и $O(n)$ памяти.
+Для менее двух точек возвращается \texttt{nullopt}, повторы дают $0$.
+Вход копируется; исходный порядок не изменяется.
+\subsection*{Реализация}
+Использует \texttt{squared\_distance}. После рекурсии диапазон отсортирован
+по $y$; слияние и просмотр полосы линейны благодаря упаковке точек.
+Все квадраты расстояний должны помещаться в конечный \texttt{db}.
+\begin{lstlisting}[name=geometry_closest]
+optional<db> closest_pair_squared(vector<pair<db, db>> points) {
+    int n = points.size();
+    if (n < 2) return nullopt;
+    sort(points.begin(), points.end());
+    if (adjacent_find(points.begin(), points.end()) != points.end()) return 0;
+    vector<pair<db, db>> buffer(n);
+    auto by_y = [](auto a, auto b) {
+        return pair{a.second, a.first} < pair{b.second, b.first};
+    };
+    function<db(int, int)> solve = [&](int left, int right) -> db {
+        db answer = numeric_limits<db>::infinity();
+        if (right-left <= 3) {
+            for (int i = left; i < right; ++i)
+                for (int j = i+1; j < right; ++j)
+                    answer = min(answer, squared_distance(points[i], points[j]));
+            sort(points.begin()+left, points.begin()+right, by_y);
+            return answer;
+        }
+        int middle = (left+right)/2;
+        db split = points[middle].first;
+        db first = solve(left, middle), second = solve(middle, right);
+        answer = min(first, second);
+        merge(points.begin()+left, points.begin()+middle,
+              points.begin()+middle, points.begin()+right, buffer.begin()+left, by_y);
+        copy(buffer.begin()+left, buffer.begin()+right, points.begin()+left);
+        int count = 0;
+        for (int i = left; i < right; ++i) {
+            db dx = points[i].first-split;
+            if (dx*dx >= answer) continue;
+            for (int j = count-1; j >= 0; --j) {
+                db dy = points[i].second-buffer[j].second;
+                if (dy*dy >= answer) break;
+                answer = min(answer, squared_distance(points[i], buffer[j]));
+            }
+            buffer[count++] = points[i];
+        }
+        return answer;
+    };
+    return solve(0, n);
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Можно хранить исходные индексы вместе с точками для восстановления пары.
+Здесь возвращается только расстояние, без добавления отдельного типа точки.
+
+
+\fi
+\iffalse
+\section{Пересечение окружности и прямой}
+По центру и радиусу окружности и двум точкам прямой возвращает от нуля до двух точек пересечения за $O(1)$.
+Нужны конечный $r\ge0$, различные точки прямой, \texttt{project\_line} и \texttt{squared\_distance}; нулевой радиус допустим.
+При $|d-r|\le\texttt{eps}$ возвращается одна точка --- проекция центра на прямую, то есть приближённое касание даже без точного пересечения.
+\begin{lstlisting}[name=geometry_circle_line]
+vector<pair<db, db>> circle_line(pair<db, db> center, db radius,
+        pair<db, db> a, pair<db, db> b, db eps) {
+    assert(radius >= 0 && a != b && eps >= 0);
+    auto foot = *project_line(center, a, b);
+    db distance = sqrt(squared_distance(center, foot));
+    if (distance > radius+eps) return {};
+    if (abs(distance-radius) <= eps) return {foot};
+    db length = hypot(b.first-a.first, b.second-a.second);
+    db offset = sqrt(max(0.0, (radius-distance)*(radius+distance)));
+    db x = (b.first-a.first)/length*offset;
+    db y = (b.second-a.second)/length*offset;
+    return {{foot.first-x, foot.second-y}, {foot.first+x, foot.second+y}};
+}
+\end{lstlisting}
+\fi
+
+% От нуля до двух точек за $O(1)$. Радиус $r\ge0$ конечен, прямая $a\ne b$.
+% Нулевой радиус допустим; касание возвращает ровно одну точку.
+% Использует \texttt{project\_line} и \texttt{squared\_distance}.
+% Допуск абсолютный по расстоянию: при $|d-r|\le\texttt{eps}$ возвращается
+% проекция центра (приближённое касание), даже если точного касания нет.
+%
+% Для отрезка найденные точки дополнительно фильтруются по параметру.
+% Порядок двух точек следует направлению прямой.
+
+\iffalse
+\section{Пересечение двух окружностей}
+Находит общие точки двух окружностей за $O(1)$: пустой вектор означает отсутствие пересечений, \texttt{nullopt} --- бесконечно много точек.
+Радиусы должны быть конечными и неотрицательными; одинаковые окружности нулевого радиуса имеют ровно одну общую точку.
+Нужна \texttt{squared\_distance}; совпадение центров и радиусов проверяется точно, а \texttt{eps} задаёт допуск по расстоянию для разделения и касания, поэтому точки касания могут быть приближёнными.
+\begin{lstlisting}[name=geometry_circle_circle]
+optional<vector<pair<db, db>>> circle_circle(pair<db, db> a, db r,
+        pair<db, db> b, db s, db eps) {
+    assert(r >= 0 && s >= 0 && eps >= 0);
+    vector<pair<db, db>> result;
+    db distance = sqrt(squared_distance(a, b));
+    if (a == b) {
+        if (r != s) return result;
+        if (r == 0) return vector<pair<db, db>>{a};
+        return nullopt;
+    }
+    if (distance > r+s+eps || distance < abs(r-s)-eps) return result;
+    db along = (distance + (r-s)*(r+s)/distance)/2;
+    pair<db, db> unit = {(b.first-a.first)/distance, (b.second-a.second)/distance};
+    pair<db, db> base = {a.first+along*unit.first, a.second+along*unit.second};
+    if (abs(distance-r-s) <= eps || abs(distance-abs(r-s)) <= eps)
+        return vector<pair<db, db>>{base};
+    db height = sqrt(max(0.0, (r-along)*(r+along)));
+    result.push_back({base.first-height*unit.second, base.second+height*unit.first});
+    result.push_back({base.first+height*unit.second, base.second-height*unit.first});
+    return result;
+}
+\end{lstlisting}
+\fi
+
+% За $O(1)$ возвращает \texttt{optional<vector<pair<db,db>>>}:
+% \texttt{nullopt} означает бесконечно много точек, пустой вектор --- ни одной.
+% Радиусы конечны и неотрицательны; одинаковые окружности нулевого радиуса
+% имеют ровно одну общую точку, а не бесконечность.
+% Использует \texttt{squared\_distance}. Совпадение центров и радиусов
+% проверяется точно; \texttt{eps} применяется к расстояниям при разделении
+% и касании, но не превращает близкие окружности в совпадающие.
+%
+% При приближённом касании возвращаемая точка лишь приближённо лежит на обеих
+% окружностях. Очень близкие центры делают вычисление основания неустойчивым.
+
+\iffalse
+\section{Общие касательные двух окружностей}
+\subsection*{Для чего нужен}
+От нуля до четырёх прямых за $O(1)$. Радиусы строго положительны.
+Прямая представлена парой \texttt{(точка, единичное направление)}, а не
+двумя точками касания: при касании окружностей точки касания совпадают.
+\texttt{nullopt} --- бесконечное семейство для совпадающих окружностей.
+\subsection*{Реализация}
+Использует \texttt{squared\_distance}. Совпадение окружностей точное.
+Для каждого знака радиуса решается уравнение единичной нормали;
+\texttt{eps} --- абсолютный допуск по расстоянию между центрами.
+Вблизи касания нормаль нормируется, поэтому отклонение от второго радиуса
+не превосходит допуска с учётом округления.
+\begin{lstlisting}[name=geometry_tangents]
+optional<vector<pair<pair<db, db>, pair<db, db>>>> common_tangents(
+        pair<db, db> a, db r, pair<db, db> b, db s, db eps) {
+    assert(r > 0 && s > 0 && eps >= 0);
+    vector<pair<pair<db, db>, pair<db, db>>> result;
+    if (a == b) {
+        if (r == s) return nullopt;
+        return result;
+    }
+    db distance = sqrt(squared_distance(a, b));
+    db x = (b.first-a.first)/distance, y = (b.second-a.second)/distance;
+    for (int sign : {1, -1}) {
+        db difference = r-sign*s;
+        if (distance < abs(difference)-eps) continue;
+        db cosine = clamp(difference/distance, -1.0, 1.0);
+        db sine = sqrt(max(0.0, (1-cosine)*(1+cosine)));
+        if (abs(distance-abs(difference)) <= eps) {
+            cosine = difference >= 0 ? 1 : -1;
+            sine = 0;
+        }
+        for (int side : {-1, 1}) {
+            db nx = x*cosine-side*y*sine, ny = y*cosine+side*x*sine;
+            result.push_back({{a.first+r*nx, a.second+r*ny}, {-ny, nx}});
+            if (sine == 0) break;
+        }
+    }
+    return result;
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Нулевые радиусы здесь намеренно исключены: касательные к точкам требуют
+отдельного соглашения о совпадающих ответах. Для проверки прямой достаточно
+расстояния от каждого центра до неё.
+
+
+\fi
+\iffalse
+\section{Минимальная охватывающая окружность}
+\subsection*{Для чего нужен}
+Рандомизированный инкрементальный алгоритм: ожидаемое время $O(n)$,
+худшее $O(n^3)$, память $O(n)$ из-за копии входа. Результат ---
+\texttt{(центр, радиус)}, пустой вход даёт \texttt{nullopt}.
+Одна точка и повторы допустимы, коллинеарные наборы тоже.
+\subsection*{Реализация}
+Использует \texttt{squared\_distance}; генератор передаётся снаружи.
+Допуск абсолютный по радиусу: точка внутри, если расстояние не больше
+$r+\texttt{eps}$. Поэтому при положительном допуске результат приближённый.
+Определитель и центр окружности трёх точек считаются в \texttt{long double};
+точно нулевой определитель заменяется окружностью на самой дальней паре.
+Почти коллинеарные тройки остаются плохо обусловленными; результат и
+промежуточная арифметика обязаны быть конечными.
+\begin{lstlisting}[name=geometry_enclosing]
+optional<pair<pair<db, db>, db>> minimum_enclosing_circle(
+        vector<pair<db, db>> points, mt19937_64& random, db eps) {
+    assert(eps >= 0);
+    if (points.empty()) return nullopt;
+    shuffle(points.begin(), points.end(), random);
+    pair<db, db> center = points[0];
+    db radius = 0;
+    auto outside = [&](pair<db, db> p) {
+        return hypot(p.first-center.first, p.second-center.second) > radius+eps;
+    };
+    auto diameter = [&](pair<db, db> a, pair<db, db> b) {
+        center = {a.first+(b.first-a.first)/2, a.second+(b.second-a.second)/2};
+        radius = sqrt(squared_distance(a, b))/2;
+    };
+    for (int i = 0; i < (int)points.size(); ++i) {
+        if (!outside(points[i])) continue;
+        center = points[i];
+        radius = 0;
+        for (int j = 0; j < i; ++j) {
+            if (!outside(points[j])) continue;
+            diameter(points[i], points[j]);
+            for (int k = 0; k < j; ++k) {
+                if (!outside(points[k])) continue;
+                auto a = points[i], b = points[j], c = points[k];
+                long double bx = (long double)b.first-a.first;
+                long double by = (long double)b.second-a.second;
+                long double cx = (long double)c.first-a.first;
+                long double cy = (long double)c.second-a.second;
+                long double determinant = 2*(bx*cy-by*cx);
+                if (determinant == 0) {
+                    auto u = a, v = b;
+                    if (squared_distance(a, c) > squared_distance(u, v)) { u = a; v = c; }
+                    if (squared_distance(b, c) > squared_distance(u, v)) { u = b; v = c; }
+                    diameter(u, v);
+                } else {
+                    long double first = bx*bx+by*by, second = cx*cx+cy*cy;
+                    center = {a.first+(db)((first*cy-second*by)/determinant),
+                              a.second+(db)((bx*second-cx*first)/determinant)};
+                    radius = hypot(center.first-a.first, center.second-a.second);
+                }
+            }
+        }
+    }
+    return pair{center, radius};
+}
+\end{lstlisting}
+\subsection*{Возможные улучшения и дополнения}
+Фиксированное зерно удобно для воспроизводимости, но ожидаемая линейная
+оценка предполагает случайную перестановку, независимую от входа.
+Допуск не является доказательством точного включения всех точек.
+
+\fi
