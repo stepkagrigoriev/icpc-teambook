@@ -1,11 +1,12 @@
-\documentclass[a4paper,10pt]{article}
+\documentclass[a4paper,landscape,10pt]{article}
 \usepackage{fontspec}
 \setmainfont{DejaVu Serif}[Scale=0.9]
 \setmonofont{DejaVu Sans Mono}[Scale=0.88]
 \usepackage[russian]{babel}
-\usepackage[margin=16mm,top=20mm,bottom=15mm,headheight=14pt]{geometry}
+\usepackage[landscape,margin=16mm,top=20mm,bottom=15mm,headheight=14pt]{geometry}
+\setlength{\columnsep}{8mm}
 \usepackage{fancyhdr,listings,xcolor,amsmath,amssymb,xurl}
-\usepackage{titlesec}
+\usepackage{titlesec,multicol}
 \usepackage[unicode,hidelinks]{hyperref}
 \titleformat{\section}{\normalsize\bfseries}{\thesection}{0.7em}{}
 \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.7em}{}
@@ -30,6 +31,8 @@
 \fontsize{9}{10.5}\selectfont
 % Algorithmica: https://ru.algorithmica.org/; Сергей Слотин; CC BY-SA.
 % Источники и сведения об адаптациях сохранены в комментариях разделов.
+\begin{multicols}{3}
+\raggedcolumns
 \input{sections/structures}
 \input{sections/advanced_structures}
 \input{sections/graphs}
@@ -42,4 +45,5 @@
 \input{sections/geometry}
 \input{sections/optimization}
 \input{sections/supplement}
+\end{multicols}
 \end{document}
