@@ -1,150 +1,437 @@
-\section{Система непересекающихся множеств (DSU)}
-Поддерживает объединение компонент и проверку принадлежности одной компоненте; объединение возвращает признак изменения разбиения.
-Вход --- векторы \texttt{parent} и \texttt{size} размера $n$, исходно $parent[i]=i$, $size[i]=1$, вершины $0\ldots n-1$; требуется $0\le n<\texttt{INT\_MAX}$ и корректные индексы вершин.
-Поиск корня и объединение занимают амортизированно $O(\alpha(n))$ времени, память $O(n)$.
-\begin{lstlisting}[name=data_dsu]
-int find_root(vector<int>& parent, int vertex) {
-    if (parent[vertex] == vertex) return vertex;
-    return parent[vertex] = find_root(parent, parent[vertex]);
-}
-
-bool unite(vector<int>& parent, vector<int>& size, int first, int second) {
-    first = find_root(parent, first);
-    second = find_root(parent, second);
-    if (first == second) return false;
-    if (size[first] < size[second]) swap(first, second);
-    parent[second] = first;
-    size[first] += size[second];
-    return true;
-}
+\section{Быстрый сниппет: PBDS (Замена рукописному Treap)}
+Включает красно-чёрное дерево с поддержкой $k$-й порядковой статистики и ранга элемента.
+\begin{lstlisting}[name=pbds_snippet]
+#include <ext/pb_ds/assoc_container.hpp>
+#include <ext/pb_ds/tree_policy.hpp>
+using namespace __gnu_pbds;
+template<class T> using ordered_set = tree<T, null_type, less<T>, rb_tree_tag, tree_order_statistics_node_update>;
+// s.find_by_order(k) -- итератор на k-й элемент (0-indexed)
+// s.order_of_key(x)  -- количество элементов строго меньше x
 \end{lstlisting}
-% \subsection*{Для чего нужен}
-% Поддерживает объединение компонент и проверку принадлежности одной компоненте.
-% Вершины нумеруются от $0$ до $n-1$, векторы \texttt{parent} и \texttt{size}
-% имеют размер $n$; исходно $parent[i]=i$, $size[i]=1$.
-% Требуется $0\le n<\texttt{INT\_MAX}$.
-% Амортизированное время поиска корня и объединения ---
-% $O(\alpha(n))$, память $O(n)$. Объединение возвращает признак
-% изменения разбиения.
-% Код адаптирован из \url{https://ru.algorithmica.org/cs/set-structures/dsu/}:
-% массивы передаются параметрами, добавлены проверка совпадения корней
-% и возвращаемый признак объединения.
-% \subsection*{Реализация}
-%
-% \subsection*{Возможные улучшения и дополнения}
-% Сжатие путей и объединение по размеру дают почти константную амортизацию.
-% Можно хранить дополнительные данные компоненты в корне и объединять их при
-% смене корня. Для отката операций применяют DSU с историей изменений без
-% сжатия путей. Для офлайн-задач полезен DSU на отрезке времени.
 
-\section{Дерево Фенвика}
-Поддерживает прибавление к позиции и суммы на полуинтервалах: префикс относится к $[0,right)$, запрос суммы --- к $[left,right)$.
-Вход --- изначально нулевой вектор \texttt{tree} размера $n+1$; требуется $0\le n<\texttt{INT\_MAX}$, $0\le left\le right\le n$, при обновлении $0\le index<n$.
-Суммы и промежуточные значения должны помещаться в \texttt{ll}; каждая операция занимает $O(\log(n+1))$ времени и $O(1)$ дополнительной памяти.
-\begin{lstlisting}[name=data_fenwick]
-void add(vector<ll>& tree, int index, ll delta) {
-    int length = (int)tree.size() - 1;
-    for (++index; index <= length;) {
-        tree[index] += delta;
-        int step = index & -index;
-        if (step > length - index) break;
-        index += step;
+\section{DSU с откатами (Rollback DSU)}
+Поддерживает объединение и откат состояния до снимка (snapshot).
+Сжатие путей отсутствует (для сохранения возможности отката), поэтому время $O(\log n)$ на операцию. Незаменим для Dynamic Connectivity Offline (разделяй-и-властвуй по времени).
+\begin{lstlisting}[name=rollback_dsu]
+struct RollbackDSU {
+    int n, comps;
+    vector<int> p, sz;
+    vector<array<int, 4>> history; // {v, p[v], u, sz[u]}
+
+    RollbackDSU(int n) : n(n), comps(n), p(n), sz(n, 1) {
+        iota(p.begin(), p.end(), 0);
     }
-}
-
-ll prefix(const vector<ll>& tree, int right) {
-    ll answer = 0;
-    for (; right > 0; right -= right & -right) answer += tree[right];
-    return answer;
-}
-
-ll range(const vector<ll>& tree, int left, int right) {
-    return prefix(tree, right) - prefix(tree, left);
-}
-\end{lstlisting}
-% \subsection*{Для чего нужен}
-% Поддерживает прибавление к одной позиции и суммы на полуинтервалах.
-% Внешний вектор \texttt{tree} имеет размер $n+1$ и изначально заполнен нулями;
-% индексы элементов --- $0\ldots n-1$. Префиксная сумма относится
-% к $[0,right)$, сумма отрезка --- к $[left,right)$.
-% Требуется $0\le left\le right\le n$, для обновления $0\le index<n$;
-% $n<\texttt{INT\_MAX}$. Суммы и промежуточные значения помещаются в \texttt{ll}.
-% Каждая операция занимает $O(\log(n+1))$ времени и $O(1)$ дополнительной памяти.
-% Код адаптирован из \url{https://ru.algorithmica.org/cs/range-queries/fenwick/}:
-% внешний массив передаётся параметром, индексы элементов начинаются с нуля,
-% границы полуоткрытые, суммы имеют тип \texttt{ll}.
-% \subsection*{Реализация}
-%
-% \subsection*{Возможные улучшения и дополнения}
-% Для значения в одной позиции и прибавления на отрезке достаточно одного
-% дерева Фенвика над разностями. Два дерева позволяют получать суммы при
-% прибавлении на отрезке. Для минимума возможны специальные варианты только при ограниченных
-% обновлениях; для произвольных изменений удобнее дерево отрезков.
-
-\section{Дерево отрезков с отложенным прибавлением}
-Обрабатывает массив значений и запросы $(left,right,value,type)$: тип $0$ прибавляет \texttt{value} на $[left,right)$, тип $1$ возвращает сумму, игнорируя поле значения; ответ содержит суммы в порядке запросов.
-Требуется $0\le n<\texttt{INT\_MAX}/4$, $0\le left\le right\le n$; пустые массивы и полуинтервалы допустимы, суммы, метки и промежуточные произведения должны помещаться в \texttt{ll}.
-Построение занимает $O(n)$, запрос --- $O(\log(n+1))$, общая память $O(n+q)$.
-\begin{lstlisting}[name=data_segment]
-vector<ll> segmentTree(const vector<ll>& values,
-        const vector<tuple<int, int, ll, int>>& queries) {
-    int n = values.size();
-    vector<ll> tree(4 * max(1, n)), lazy(tree.size()), answer;
-    auto build = [&](auto&& self, int node, int left, int right) -> void {
-        if (right - left == 1) { tree[node] = values[left]; return; }
-        int middle = (left + right) / 2;
-        self(self, node * 2, left, middle);
-        self(self, node * 2 + 1, middle, right);
-        tree[node] = tree[node * 2] + tree[node * 2 + 1];
-    };
-    auto update = [&](auto&& self, int node, int left, int right,
-                      int queryLeft, int queryRight, ll value) -> void {
-        if (queryRight <= left || right <= queryLeft) return;
-        if (queryLeft <= left && right <= queryRight) {
-            tree[node] += value * (right - left); lazy[node] += value; return;
+    int find(int v) {
+        while (v != p[v]) v = p[v];
+        return v;
+    }
+    bool unite(int u, int v) {
+        u = find(u); v = find(v);
+        if (u == v) return false;
+        if (sz[u] < sz[v]) swap(u, v);
+        history.push_back({v, p[v], u, sz[u]});
+        p[v] = u; sz[u] += sz[v]; comps--;
+        return true;
+    }
+    int snapshot() const { return (int)history.size(); }
+    void rollback(int snap) {
+        while ((int)history.size() > snap) {
+            auto [v, pv, u, su] = history.back();
+            history.pop_back();
+            p[v] = pv; sz[u] = su; comps++;
         }
-        int middle = (left + right) / 2;
-        self(self, node * 2, left, middle, queryLeft, queryRight, value);
-        self(self, node * 2 + 1, middle, right, queryLeft, queryRight, value);
-        tree[node] = tree[node * 2] + tree[node * 2 + 1]
-                   + lazy[node] * (right - left);
-    };
-    auto query = [&](auto&& self, int node, int left, int right,
-                     int queryLeft, int queryRight, ll carry) -> ll {
-        if (queryRight <= left || right <= queryLeft) return 0;
-        if (queryLeft <= left && right <= queryRight)
-            return tree[node] + carry * (right - left);
-        int middle = (left + right) / 2;
-        carry += lazy[node];
-        return self(self, node * 2, left, middle, queryLeft, queryRight, carry)
-             + self(self, node * 2 + 1, middle, right, queryLeft, queryRight, carry);
-    };
-    if (n) build(build, 1, 0, n);
-    for (auto [left, right, value, type] : queries)
-        if (type == 0) { if (n) update(update, 1, 0, n, left, right, value); }
-        else answer.push_back(n ? query(query, 1, 0, n, left, right, 0) : 0);
-    return answer;
-}
+    }
+};
 \end{lstlisting}
-% \subsection*{Для чего нужен}
-% Пакетно обрабатывает прибавления на полуинтервале и запросы суммы.
-% Запрос хранит левую и правую границы, значение и тип в этом порядке:
-% при типе $0$ значение прибавляется на $[left,right)$, при типе $1$
-% вычисляется сумма, а поле значения игнорируется. Ответ содержит суммы
-% в порядке запросов. Требуется $0\le left\le right\le n$;
-% пустые массивы и полуинтервалы допустимы.
-% Построение занимает $O(n)$, запрос --- $O(\log(n+1))$,
-% общая память $O(n+q)$. Требуется $n<\texttt{INT\_MAX}/4$;
-% суммы, метки и промежуточные произведения помещаются в \texttt{ll}.
-% Тематический источник: \url{https://ru.algorithmica.org/cs/segment-tree/lazy-propagation/}.
-% Код ниже самостоятельный: в статье используется присваивание на отрезке
-% и дерево на указателях, здесь --- прибавление и массивы без проталкивания.
-% \subsection*{Реализация}
-%
-% \subsection*{Возможные улучшения и дополнения}
-% При необходимости можно вернуть минимум или максимум, заменив агрегат и
-% формулу применения отложенного значения. Для онлайн-запросов вынесите
-% построение и операции в функции с внешними \texttt{tree} и \texttt{lazy}.
-% Комбинацию прибавления и присваивания нужно хранить двумя видами меток и
-% применять их в правильном порядке.
 
+\section{Дерево Фенвика (1D и 2D)}
+1D поддерживает $k$-ю статистику за $O(\log n)$ через бинарный подъем (для неотрицательных частот).
+Интерфейс 0-индексирован, запросы включительные $[l, r]$.
+\begin{lstlisting}[name=fenwick]
+struct Fenwick {
+    int n; vector<ll> t;
+    Fenwick(int n) : n(n), t(n + 1, 0) {}
+    void add(int i, ll delta) {
+        for (++i; i <= n; i += i & -i) t[i] += delta;
+    }
+    ll pref(int i) {
+        ll sum = 0;
+        for (++i; i > 0; i -= i & -i) sum += t[i];
+        return sum;
+    }
+    ll query(int l, int r) {
+        return (l <= r ? pref(r) - (l > 0 ? pref(l - 1) : 0) : 0);
+    }
+    // k-я статистика (1-indexed k). O(log N)
+    int find_kth(ll k) {
+        int idx = 0;
+        for (int step = 1 << __lg(max(1, n)); step > 0; step >>= 1) {
+            if (idx + step <= n && t[idx + step] < k) {
+                idx += step; k -= t[idx];
+            }
+        }
+        return idx; // 0-indexed позиция
+    }
+};
+
+struct Fenwick2D {
+    int n, m; vector<vector<ll>> t;
+    Fenwick2D(int n, int m) : n(n), m(m), t(n + 1, vector<ll>(m + 1, 0)) {}
+    void add(int r, int c, ll delta) {
+        for (int i = r + 1; i <= n; i += i & -i)
+            for (int j = c + 1; j <= m; j += j & -j) t[i][j] += delta;
+    }
+    ll pref(int r, int c) {
+        ll sum = 0;
+        for (int i = r + 1; i > 0; i -= i & -i)
+            for (int j = c + 1; j > 0; j -= j & -j) sum += t[i][j];
+        return sum;
+    }
+    ll query(int r1, int c1, int r2, int c2) {
+        if (r1 > r2 || c1 > c2) return 0;
+        return pref(r2, c2) - pref(r1 - 1, c2) - pref(r2, c1 - 1) + pref(r1 - 1, c1 - 1);
+    }
+};
+\end{lstlisting}
+
+\section{Разреженная таблица (Sparse Table)}
+Статическая таблица на идемпотентных ассоциативных операциях ($\min, \max, \gcd$). Построение $O(n \log n)$, запрос $O(1)$.
+\begin{lstlisting}[name=sparse_table]
+template<typename T, typename Op = function<T(T, T)>>
+struct SparseTable {
+    int n; vector<vector<T>> st; Op op;
+    SparseTable(const vector<T>& a, Op op = [](T a, T b) { return min(a, b); })
+        : n(a.size()), op(op) {
+        int k = __lg(max(1, n)) + 1;
+        st.assign(k, a);
+        for (int j = 1; j < k; ++j)
+            for (int i = 0; i + (1 << j) <= n; ++i)
+                st[j][i] = op(st[j - 1][i], st[j - 1][i + (1 << (j - 1))]);
+    }
+    T query(int l, int r) const { // [l, r]
+        int j = __lg(r - l + 1);
+        return op(st[j][l], st[j][r - (1 << j) + 1]);
+    }
+};
+\end{lstlisting}
+
+\section{Монотонная очередь (MinQueue)}
+Поддерживает скользящий минимум для окна динамического размера.
+Амортизированное время $O(1)$ на добавление и удаление.
+\begin{lstlisting}[name=monotonic_queue]
+template<typename T>
+struct MinQueue {
+    deque<pair<T, int>> dq; // {value, index}
+    int l = 0, r = 0;
+    void push(T val) {
+        while (!dq.empty() && dq.back().first >= val) dq.pop_back();
+        dq.push_back({val, r++});
+    }
+    void pop() {
+        if (!dq.empty() && dq.front().second == l) dq.pop_front();
+        l++;
+    }
+    T get_min() const { return dq.front().first; }
+    int size() const { return r - l; }
+};
+\end{lstlisting}
+
+\section{Дерево отрезков с ленивым обновлением}
+Шаблон с раздельными функциями \texttt{apply} и \texttt{push}.
+Легко меняется на $\min/\max$ (заменить умножение длины на прибавление к значению).
+\begin{lstlisting}[name=lazy_segtree]
+struct LazySegTree {
+    int n; vector<ll> tree, lazy;
+    LazySegTree(int n) : n(n), tree(4 * n, 0), lazy(4 * n, 0) {}
+
+    void apply(int v, int l, int r, ll val) {
+        tree[v] += val * (r - l + 1); // min/max: tree[v] += val;
+        lazy[v] += val;
+    }
+    void push(int v, int l, int r) {
+        if (lazy[v] != 0) {
+            int m = (l + r) / 2;
+            apply(2 * v, l, m, lazy[v]);
+            apply(2 * v + 1, m + 1, r, lazy[v]);
+            lazy[v] = 0;
+        }
+    }
+    void build(const vector<ll>& a, int v, int l, int r) {
+        if (l == r) { tree[v] = a[l]; return; }
+        int m = (l + r) / 2;
+        build(a, 2 * v, l, m); build(a, 2 * v + 1, m + 1, r);
+        tree[v] = tree[2 * v] + tree[2 * v + 1];
+    }
+    void update(int v, int l, int r, int ql, int qr, ll val) {
+        if (ql <= l && r <= qr) { apply(v, l, r, val); return; }
+        push(v, l, r);
+        int m = (l + r) / 2;
+        if (ql <= m) update(2 * v, l, m, ql, qr, val);
+        if (qr > m)  update(2 * v + 1, m + 1, r, ql, qr, val);
+        tree[v] = tree[2 * v] + tree[2 * v + 1];
+    }
+    ll query(int v, int l, int r, int ql, int qr) {
+        if (ql <= l && r <= qr) return tree[v];
+        push(v, l, r);
+        int m = (l + r) / 2; ll res = 0;
+        if (ql <= m) res += query(2 * v, l, m, ql, qr);
+        if (qr > m)  res += query(2 * v + 1, m + 1, r, ql, qr);
+        return res;
+    }
+    void update(int ql, int qr, ll val) { if (ql <= qr) update(1, 0, n - 1, ql, qr, val); }
+    ll query(int ql, int qr) { return (ql <= qr ? query(1, 0, n - 1, ql, qr) : 0); }
+};
+\end{lstlisting}
+
+\section{Персистентное ДО: $k$-я статистика на отрезке}
+Координаты значений предварительно сжимаются в диапазон $[0, M - 1]$.
+Каждая версия дерева занимает $O(\log M)$ памяти. Запрос $k$-й статистики: $O(\log M)$.
+\begin{lstlisting}[name=persistent_segtree]
+struct PersistentSegTree {
+    struct Node { int l = 0, r = 0, cnt = 0; };
+    vector<Node> tree; vector<int> roots; int m; // диапазон координат [0, m - 1]
+
+    PersistentSegTree(int m) : m(m), tree(1) { roots.push_back(0); }
+
+    int update(int prev, int l, int r, int pos) {
+        int cur = tree.size();
+        tree.push_back(tree[prev]); tree[cur].cnt++;
+        if (l == r) return cur;
+        int mid = (l + r) / 2;
+        if (pos <= mid) tree[cur].l = update(tree[prev].l, l, mid, pos);
+        else            tree[cur].r = update(tree[prev].r, mid + 1, r, pos);
+        return cur;
+    }
+    // k -- 1-indexed rank
+    int query(int u, int v, int l, int r, int k) {
+        if (l == r) return l;
+        int count_left = tree[tree[v].l].cnt - tree[tree[u].l].cnt;
+        int mid = (l + r) / 2;
+        if (k <= count_left) return query(tree[u].l, tree[v].l, l, mid, k);
+        return query(tree[u].r, tree[v].r, mid + 1, r, k - count_left);
+    }
+    // roots[r + 1] vs roots[l] для подотрезка [l, r]
+    void add_version(int pos) {
+        roots.push_back(update(roots.back(), 0, m - 1, pos));
+    }
+    int get_kth(int l, int r, int k) {
+        return query(roots[l], roots[r + 1], 0, m - 1, k);
+    }
+};
+\end{lstlisting}
+
+\section{Дерево Ли Чао (Li Chao Tree)}
+Динамический Convex Hull Trick для добавления прямых $y = kx + b$ и запроса минимума в целой точке $x \in [0, X_{max}]$. Время на запрос/добавление $O(\log X)$.
+\begin{lstlisting}[name=li_chao]
+struct Line {
+    ll k, b;
+    ll eval(ll x) const { return k * x + b; }
+};
+
+struct LiChao {
+    int n; vector<Line> tree; vector<bool> has;
+    LiChao(int n) : n(n), tree(4 * n), has(4 * n, false) {}
+
+    void add_line(int v, int l, int r, Line line) {
+        if (!has[v]) { tree[v] = line; has[v] = true; return; }
+        int m = (l + r) / 2;
+        bool mid = line.eval(m) < tree[v].eval(m);
+        bool left = line.eval(l) < tree[v].eval(l);
+        if (mid) swap(tree[v], line);
+        if (l == r) return;
+        if (left != mid) add_line(2 * v, l, m, line);
+        else add_line(2 * v + 1, m + 1, r, line);
+    }
+    ll query(int v, int l, int r, ll x) {
+        if (!has[v]) return 4e18; // INF
+        ll res = tree[v].eval(x);
+        if (l == r) return res;
+        int m = (l + r) / 2;
+        if (x <= m) return min(res, query(2 * v, l, m, x));
+        return min(res, query(2 * v + 1, m + 1, r, x));
+    }
+    void add_line(ll k, ll b) { add_line(1, 0, n - 1, {k, b}); }
+    ll query(ll x) { return query(1, 0, n - 1, x); }
+};
+\end{lstlisting}
+
+\section{Неявный Декартово Дерево (Implicit Treap)}
+Поддерживает вставки, удаления, разрезы и разворот произвольного подотрезка за $O(\log n)$.
+\begin{lstlisting}[name=implicit_treap]
+mt19937 rng(712367);
+struct Treap {
+    struct Node {
+        ll val; int prio, sz = 1; bool rev = false;
+        Node *l = nullptr, *r = nullptr;
+        Node(ll val) : val(val), prio(rng()) {}
+    };
+    using pNode = Node*;
+    pNode root = nullptr;
+
+    int size(pNode t) { return t ? t->sz : 0; }
+    void pull(pNode t) { if (t) t->sz = 1 + size(t->l) + size(t->r); }
+    void push(pNode t) {
+        if (!t || !t->rev) return;
+        swap(t->l, t->r);
+        if (t->l) t->l->rev ^= 1;
+        if (t->r) t->r->rev ^= 1;
+        t->rev = false;
+    }
+    void split(pNode t, int k, pNode& l, pNode& r) {
+        if (!t) { l = r = nullptr; return; }
+        push(t);
+        if (size(t->l) >= k) {
+            split(t->l, k, l, t->l); r = t;
+        } else {
+            split(t->r, k - size(t->l) - 1, t->r, r); l = t;
+        }
+        pull(t);
+    }
+    void merge(pNode& t, pNode l, pNode r) {
+        push(l); push(r);
+        if (!l || !r) { t = l ? l : r; return; }
+        if (l->prio > r->prio) { merge(l->r, l->r, r); t = l; }
+        else { merge(r->l, l, r->l); t = r; }
+        pull(t);
+    }
+    void reverse(int ql, int qr) { // 0-indexed [ql, qr]
+        pNode l, mid, r;
+        split(root, ql, l, mid);
+        split(mid, qr - ql + 1, mid, r);
+        if (mid) mid->rev ^= 1;
+        merge(mid, mid, r); merge(root, l, mid);
+    }
+};
+\end{lstlisting}
+
+\section{HLD (Heavy-Light Decomposition)}
+Линеаризует дерево, сводя запросы на пути $u \ldots v$ к $O(\log^2 n)$ запросам к структуре данных (ДО/Фенвик), а запросы к поддереву $v$ --- к $O(1)$ непрерывному отрезку $[pos[v], pos[v] + sz[v] - 1]$.
+\begin{lstlisting}[name=hld]
+struct HLD {
+    int n, timer = 0;
+    vector<vector<int>> g;
+    vector<int> parent, depth, heavy, head, pos, sz;
+
+    HLD(int n) : n(n), g(n), parent(n), depth(n),
+                 heavy(n, -1), head(n), pos(n), sz(n, 1) {}
+
+    void add_edge(int u, int v) { g[u].push_back(v); g[v].push_back(u); }
+
+    void dfs_sz(int v, int p, int d) {
+        parent[v] = p; depth[v] = d;
+        int max_c = 0;
+        for (int c : g[v]) if (c != p) {
+            dfs_sz(c, v, d + 1);
+            sz[v] += sz[c];
+            if (sz[c] > max_c) { max_c = sz[c]; heavy[v] = c; }
+        }
+    }
+    void dfs_hld(int v, int h) {
+        head[v] = h; pos[v] = timer++;
+        if (heavy[v] != -1) dfs_hld(heavy[v], h);
+        for (int c : g[v])
+            if (c != parent[v] && c != heavy[v]) dfs_hld(c, c);
+    }
+    void init(int root = 0) {
+        dfs_sz(root, -1, 0);
+        dfs_hld(root, root);
+    }
+    // Обработка пути u..v через функции callback(l, r)
+    template<typename F>
+    void process_path(int u, int v, F op) {
+        while (head[u] != head[v]) {
+            if (depth[head[u]] < depth[head[v]]) swap(u, v);
+            op(pos[head[u]], pos[u]);
+            u = parent[head[u]];
+        }
+        if (depth[u] > depth[v]) swap(u, v);
+        op(pos[u], pos[v]); // pos[u] + 1 если ребра, а не вершины
+    }
+};
+\end{lstlisting}
+
+\section{Виртуальное (сжатое) дерево}
+Строит минимальное замкнутое по LCA поддерево для выбранного множества важных вершин.
+Позволяет запускать ДП на важных вершинах за $O(k \log k)$ вместо $O(n)$.
+\begin{lstlisting}[name=virtual_tree]
+struct VirtualTree {
+    int n, LOG, timer = 0;
+    vector<vector<int>> up, g, vt;
+    vector<int> tin, tout, depth;
+
+    VirtualTree(int n) : n(n), LOG(__lg(n) + 1), up(LOG, vector<int>(n)),
+                         g(n), vt(n), tin(n), tout(n), depth(n) {}
+
+    void add_edge(int u, int v) { g[u].push_back(v); g[v].push_back(u); }
+
+    void dfs(int v, int p, int d) {
+        tin[v] = ++timer; up[0][v] = p; depth[v] = d;
+        for (int i = 1; i < LOG; ++i) up[i][v] = up[i - 1][up[i - 1][v]];
+        for (int to : g[v]) if (to != p) dfs(to, v, d + 1);
+        tout[v] = ++timer;
+    }
+    bool is_anc(int u, int v) { return tin[u] <= tin[v] && tout[u] >= tout[v]; }
+    int lca(int u, int v) {
+        if (is_anc(u, v)) return u;
+        if (is_anc(v, u)) return v;
+        for (int i = LOG - 1; i >= 0; --i)
+            if (!is_anc(up[i][u], v)) u = up[i][u];
+        return up[0][u];
+    }
+    // Строит дерево, возвращает корень. Список смежности в vt
+    int build(vector<int>& nodes) {
+        auto cmp = [&](int a, int b) { return tin[a] < tin[b]; };
+        sort(nodes.begin(), nodes.end(), cmp);
+        int m = nodes.size();
+        for (int i = 0; i < m - 1; ++i) nodes.push_back(lca(nodes[i], nodes[i + 1]));
+        sort(nodes.begin(), nodes.end(), cmp);
+        nodes.erase(unique(nodes.begin(), nodes.end()), nodes.end());
+        for (int v : nodes) vt[v].clear();
+        vector<int> st = {nodes[0]};
+        for (size_t i = 1; i < nodes.size(); ++i) {
+            int v = nodes[i];
+            while (!is_anc(st.back(), v)) st.pop_back();
+            vt[st.back()].push_back(v);
+            st.push_back(v);
+        }
+        return nodes[0];
+    }
+};
+\end{lstlisting}
+
+\section{Центроидная декомпозиция}
+Строит дерево центроидов глубины $O(\log n)$. Позволяет эффективно обрабатывать пути в дереве. Время построения: $O(n \log n)$.
+\begin{lstlisting}[name=centroid_decomp]
+struct CentroidDecomposition {
+    int n;
+    vector<vector<int>> g;
+    vector<int> sz, parent;
+    vector<bool> removed;
+
+    CentroidDecomposition(int n) : n(n), g(n), sz(n), parent(n, -1), removed(n, false) {}
+
+    void add_edge(int u, int v) { g[u].push_back(v); g[v].push_back(u); }
+
+    int get_sizes(int v, int p) {
+        sz[v] = 1;
+        for (int to : g[v])
+            if (to != p && !removed[to]) sz[v] += get_sizes(to, v);
+        return sz[v];
+    }
+    int get_centroid(int v, int p, int total) {
+        for (int to : g[v])
+            if (to != p && !removed[to] && sz[to] > total / 2)
+                return get_centroid(to, v, total);
+        return v;
+    }
+    int decompose(int v, int p = -1) {
+        int total = get_sizes(v, -1);
+        int c = get_centroid(v, -1, total);
+        parent[c] = p;
+        removed[c] = true;
+        for (int to : g[c])
+            if (!removed[to]) decompose(to, c);
+        return c;
+    }
+};
+\end{lstlisting}
